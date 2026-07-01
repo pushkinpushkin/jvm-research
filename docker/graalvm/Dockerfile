@@ -1,4 +1,5 @@
-FROM container-registry.oracle.com/graalvm/jdk:21
+ARG BASE_IMAGE=container-registry.oracle.com/graalvm/jdk:21
+FROM ${BASE_IMAGE}
 
 WORKDIR /workspace
 
