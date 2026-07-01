@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/external/fns-data/[^/]+",
+    "queryParameters": {
+      "mode": {
+        "equalTo": "long_delay"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "fixedDelayMilliseconds": 5000,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "orderId": "delayed-response",
+      "registeringFns": "0000",
+      "registeringFnsName": "Synthetic delayed FNS",
+      "externalStatus": "FNS_OK",
+      "riskScore": "UNKNOWN"
+    }
+  }
+}
