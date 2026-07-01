@@ -21,20 +21,24 @@ public class ExternalApiClient {
         return restClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/external/fns-data/{orderId}")
-                        .queryParam("mode", mode.name().toLowerCase())
+                        .queryParam("mode", toWireMockMode(mode))
                         .build(orderId))
                 .retrieve()
                 .body(ExternalFnsResponse.class);
     }
 
     public ExternalSignStatusResponse getSignStatus(String requestId) {
-        ExternalMode mode = chaosPolicy.externalMode(requestId, "sign-status");
+        ExternalMode mode = chaosPolicy.externalMode(requestId, "external-status");
         return restClient.get()
                 .uri(uriBuilder -> uriBuilder
-                        .path("/external/sign/status/{requestId}")
-                        .queryParam("mode", mode.name().toLowerCase())
+                        .path("/external/process/status/{requestId}")
+                        .queryParam("mode", toWireMockMode(mode))
                         .build(requestId))
                 .retrieve()
                 .body(ExternalSignStatusResponse.class);
+    }
+
+    private String toWireMockMode(ExternalMode mode) {
+        return mode.name().toLowerCase().replace('-', '_');
     }
 }
