@@ -21,7 +21,7 @@ results/local/jmh-results.json
 results/local/java-version.txt
 ```
 
-## 3. Запуск sandbox-приложения
+## 3. Запуск sandbox-приложения локально
 
 ```bash
 SANDBOX_ITERATIONS=20 \
@@ -45,20 +45,36 @@ JVM_NAME=local ./scripts/run-app.sh
 SAMPLES=60 INTERVAL_SECONDS=1 OUT=results/local/runtime-metrics.csv ./scripts/collect-runtime-metrics.sh <pid>
 ```
 
-## 5. Docker
+## 5. Docker runtime images
 
-Перед Docker-запуском в репозитории должен быть Gradle Wrapper, то есть файлы `gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar`, `gradle/wrapper/gradle-wrapper.properties`.
+Dockerfile-ы запускают уже собранный application distribution и JMH jar. Это важно, потому что рабочий HotSpot baseline — `openjre`, а не JDK. Такой контейнер должен запускать приложение, а не собирать Gradle-проект внутри себя.
 
-Сгенерировать wrapper можно так:
+Сначала собрать артефакты локально или в CI:
 
 ```bash
-gradle wrapper --gradle-version 8.14.3
+./gradlew clean test installDist jmhJar
 ```
 
-После этого:
+После этого собрать образы:
 
 ```bash
-docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot .
+docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-work .
 docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
-docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm .
+docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
+```
+
+Запуск sandbox-приложения:
+
+```bash
+docker run --rm jvm-research:hotspot-work
+docker run --rm jvm-research:openj9
+docker run --rm jvm-research:graalvm-jit
+```
+
+Запуск JMH jar внутри runtime-контейнера:
+
+```bash
+docker run --rm -v "$PWD/results:/results" jvm-research:hotspot-work java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/hotspot-work-jmh.json
+docker run --rm -v "$PWD/results:/results" jvm-research:openj9 java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/openj9-jmh.json
+docker run --rm -v "$PWD/results:/results" jvm-research:graalvm-jit java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/graalvm-jit-jmh.json
 ```
