@@ -4,6 +4,6 @@ public enum ExternalMode {
     OK,
     SLOW,
     ERROR,
-    TIMEOUT,
+    LONG_DELAY,
     MALFORMED
 }
