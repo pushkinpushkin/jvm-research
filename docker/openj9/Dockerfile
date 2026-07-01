@@ -1,4 +1,5 @@
-FROM ibm-semeru-runtimes:open-21-jdk
+ARG BASE_IMAGE=ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy
+FROM ${BASE_IMAGE}
 
 WORKDIR /workspace
 
