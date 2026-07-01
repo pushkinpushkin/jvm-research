@@ -56,18 +56,36 @@ chmod +x gradlew scripts/*.sh
 
 ## Docker-сборка JVM-вариантов
 
+Dockerfile-ы запускают уже собранный runtime distribution и JMH jar. Это нужно, потому что рабочий HotSpot baseline использует OpenJRE-образ, а не JDK-образ.
+
+Сначала собрать артефакты:
+
+```bash
+./gradlew clean test installDist jmhJar
+```
+
+Потом собрать runtime-образы:
+
 ```bash
 docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-work .
 docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
 docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
 ```
 
-Запуск JMH внутри контейнера:
+Запуск sandbox-приложения:
 
 ```bash
-docker run --rm -v "$PWD/results:/workspace/build/reports/jmh" jvm-research:hotspot-work ./gradlew --no-daemon clean jmh
-docker run --rm -v "$PWD/results:/workspace/build/reports/jmh" jvm-research:openj9 ./gradlew --no-daemon clean jmh
-docker run --rm -v "$PWD/results:/workspace/build/reports/jmh" jvm-research:graalvm-jit ./gradlew --no-daemon clean jmh
+docker run --rm jvm-research:hotspot-work
+docker run --rm jvm-research:openj9
+docker run --rm jvm-research:graalvm-jit
+```
+
+Запуск JMH внутри runtime-контейнера:
+
+```bash
+docker run --rm -v "$PWD/results:/results" jvm-research:hotspot-work java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/hotspot-work-jmh.json
+docker run --rm -v "$PWD/results:/results" jvm-research:openj9 java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/openj9-jmh.json
+docker run --rm -v "$PWD/results:/results" jvm-research:graalvm-jit java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/graalvm-jit-jmh.json
 ```
 
 ## Базовая идея исследования
