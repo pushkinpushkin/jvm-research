@@ -1,8 +1,18 @@
 # JVM Research Sandbox
 
-Песочница для сравнения поведения разных JVM на одинаковом Java-коде: HotSpot, OpenJ9 и GraalVM.
+Песочница для сравнения поведения разных JVM на одинаковом Java-коде: рабочий HotSpot baseline, OpenJ9 и GraalVM JIT.
 
 Цель репозитория — быстро получать воспроизводимые замеры, а потом переносить подход на реальные микросервисы.
+
+## Выбранная JVM-матрица
+
+| Variant | JVM type | Image | Role |
+|---|---|---|---|
+| `hotspot-work` | HotSpot / BellSoft Liberica | `docker-hub.binary.alfabank.ru/bellsoft/liberica-openjre-alpine:21.0.11-11` | рабочий baseline |
+| `openj9` | Eclipse OpenJ9 / IBM Semeru | `ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy` | эталонный OpenJ9 |
+| `graalvm-jit` | Oracle GraalVM JDK | `container-registry.oracle.com/graalvm/jdk:21` | GraalVM в JVM/JIT режиме |
+
+Подробности: [`docs/jvm-matrix.md`](docs/jvm-matrix.md).
 
 ## Что внутри
 
@@ -32,6 +42,8 @@
 └── docs/
     ├── enterprise-sandbox.md
     ├── experiment-plan.md
+    ├── jvm-matrix.md
+    ├── local-runbook.md
     └── metrics.md
 ```
 
@@ -49,17 +61,18 @@
 - heap/GC на простом CPU + allocation сценарии.
 ```
 
+Если Gradle Wrapper ещё не сгенерирован локально:
+
+```bash
+gradle wrapper --gradle-version 8.14.3
+chmod +x gradlew scripts/*.sh
+```
+
 Проверка проекта:
 
 ```bash
 ./gradlew test
 ./gradlew jmh
-```
-
-Если Gradle Wrapper ещё не сгенерирован локально:
-
-```bash
-gradle wrapper --gradle-version 8.14.3
 ```
 
 ### 2. Enterprise sandbox layer
@@ -72,24 +85,12 @@ HTTP -> MongoDB -> WireMock external API -> mapping -> MongoDB -> Kafka -> consu
 
 Подробнее: [docs/enterprise-sandbox.md](docs/enterprise-sandbox.md).
 
-## Быстрый запуск enterprise sandbox
-
-HotSpot:
+Быстрый запуск:
 
 ```bash
-bash scripts/run-enterprise-sandbox.sh hotspot
-```
-
-OpenJ9:
-
-```bash
+bash scripts/run-enterprise-sandbox.sh hotspot-work
 bash scripts/run-enterprise-sandbox.sh openj9
-```
-
-GraalVM:
-
-```bash
-bash scripts/run-enterprise-sandbox.sh graalvm
+bash scripts/run-enterprise-sandbox.sh graalvm-jit
 ```
 
 Сервис поднимается вместе с MongoDB, Kafka и WireMock через `infra/docker-compose.yml`.
@@ -111,20 +112,44 @@ RATE=20 DURATION=5m ORDER_POOL=10000 bash scripts/run-load.sh
 
 ## Docker-сборка JVM-вариантов
 
-Старые Dockerfile для JMH-слоя остаются:
+Dockerfile-ы запускают уже собранный runtime distribution и JMH jar. Это нужно, потому что рабочий HotSpot baseline использует OpenJRE-образ, а не JDK-образ.
+
+Сначала собрать артефакты:
 
 ```bash
-docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot .
+./gradlew clean test installDist jmhJar
+```
+
+Потом собрать runtime-образы для JMH/simple runtime слоя:
+
+```bash
+docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-work .
 docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
-docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm .
+docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
+```
+
+Запуск sandbox-приложения:
+
+```bash
+docker run --rm jvm-research:hotspot-work
+docker run --rm jvm-research:openj9
+docker run --rm jvm-research:graalvm-jit
+```
+
+Запуск JMH внутри runtime-контейнера:
+
+```bash
+docker run --rm -v "$PWD/results:/results" jvm-research:hotspot-work java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/hotspot-work-jmh.json
+docker run --rm -v "$PWD/results:/results" jvm-research:openj9 java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/openj9-jmh.json
+docker run --rm -v "$PWD/results:/results" jvm-research:graalvm-jit java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/graalvm-jit-jmh.json
 ```
 
 Для enterprise sandbox используется корневой `Dockerfile` с runtime image как build arg:
 
 ```bash
-docker build --build-arg RUNTIME_IMAGE=eclipse-temurin:21-jre -t jvm-research-sandbox:hotspot .
-docker build --build-arg RUNTIME_IMAGE=ibm-semeru-runtimes:open-21-jre -t jvm-research-sandbox:openj9 .
-docker build --build-arg RUNTIME_IMAGE=ghcr.io/graalvm/jdk-community:21 -t jvm-research-sandbox:graalvm .
+docker build --build-arg RUNTIME_IMAGE=docker-hub.binary.alfabank.ru/bellsoft/liberica-openjre-alpine:21.0.11-11 -t jvm-research-sandbox:hotspot-work .
+docker build --build-arg RUNTIME_IMAGE=ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy -t jvm-research-sandbox:openj9 .
+docker build --build-arg RUNTIME_IMAGE=container-registry.oracle.com/graalvm/jdk:21 -t jvm-research-sandbox:graalvm-jit .
 ```
 
 ## Базовая идея исследования
@@ -138,3 +163,5 @@ docker build --build-arg RUNTIME_IMAGE=ghcr.io/graalvm/jdk-community:21 -t jvm-r
 ## Важно
 
 Не делаем вывод по одному запуску и только по среднему времени. Для JVM важны прогрев, JIT-компиляция, GC, контейнерные лимиты, профиль нагрузки и повторяемость результата.
+
+Native Image пока не входит в эту матрицу. Это отдельный эксперимент, потому что там сравнивается уже не JVM runtime, а AOT-компиляция и другой способ поставки приложения.
