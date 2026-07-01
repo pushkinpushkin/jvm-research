@@ -1,10 +1,9 @@
 ARG BASE_IMAGE=container-registry.oracle.com/graalvm/jdk:21
 FROM ${BASE_IMAGE}
 
-WORKDIR /workspace
+WORKDIR /opt/jvm-research
 
-COPY . .
+COPY build/install/jvm-research/ /opt/jvm-research/
+COPY build/libs/*-jmh.jar /opt/jvm-research/jmh-benchmarks.jar
 
-RUN chmod +x scripts/*.sh || true
-
-CMD ["./gradlew", "--no-daemon", "clean", "jmh"]
+CMD ["/opt/jvm-research/bin/jvm-research"]
