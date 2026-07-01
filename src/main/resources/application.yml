@@ -21,7 +21,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: dev.pushkin.jvmresearch.enterprise.kafka
+        spring.json.trusted.packages: dev.pushkin.jvmresearch.enterprise.kafka,java.util,java.lang
         spring.json.value.default.type: dev.pushkin.jvmresearch.enterprise.kafka.BusinessEvent
 
 management:
@@ -40,7 +40,7 @@ sandbox:
     payload-value-size: ${SANDBOX_PAYLOAD_VALUE_SIZE:300}
   chaos:
     enabled: ${SANDBOX_CHAOS_ENABLED:true}
-    external-api-timeout-percent: ${SANDBOX_EXTERNAL_TIMEOUT_PERCENT:3}
+    external-api-long-delay-percent: ${SANDBOX_EXTERNAL_LONG_DELAY_PERCENT:3}
     external-api-error-percent: ${SANDBOX_EXTERNAL_ERROR_PERCENT:5}
     external-api-malformed-percent: ${SANDBOX_EXTERNAL_MALFORMED_PERCENT:2}
     external-api-slow-percent: ${SANDBOX_EXTERNAL_SLOW_PERCENT:15}
