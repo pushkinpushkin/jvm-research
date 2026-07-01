@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/external/process/status/[^/]+",
+    "queryParameters": {
+      "mode": {
+        "equalTo": "error"
+      }
+    }
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "error": "Synthetic external status failure"
+    }
+  }
+}
