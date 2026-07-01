@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Benchmark output
+results/
+*.jfr
+*.hprof
+hs_err_pid*
+replay_pid*
+
+# Local env
+.env
