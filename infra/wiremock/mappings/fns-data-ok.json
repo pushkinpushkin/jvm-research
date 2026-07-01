@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/external/fns-data/[^/]+",
+    "queryParameters": {
+      "mode": {
+        "equalTo": "ok"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "orderId": "{{request.pathSegments.[2]}}",
+      "registeringFns": "7700",
+      "registeringFnsName": "Synthetic FNS Moscow",
+      "externalStatus": "FNS_OK",
+      "riskScore": "LOW"
+    },
+    "transformers": ["response-template"]
+  }
+}
