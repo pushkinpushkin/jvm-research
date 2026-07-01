@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-variant="${1:-hotspot}"
+variant="${1:-hotspot-work}"
 
 case "${variant}" in
-  hotspot)
-    export JVM_VARIANT="hotspot"
-    export RUNTIME_IMAGE="eclipse-temurin:21-jre"
+  hotspot|hotspot-work)
+    export JVM_VARIANT="hotspot-work"
+    export RUNTIME_IMAGE="docker-hub.binary.alfabank.ru/bellsoft/liberica-openjre-alpine:21.0.11-11"
     ;;
   openj9)
     export JVM_VARIANT="openj9"
-    export RUNTIME_IMAGE="ibm-semeru-runtimes:open-21-jre"
+    export RUNTIME_IMAGE="ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy"
     ;;
-  graalvm)
-    export JVM_VARIANT="graalvm"
-    export RUNTIME_IMAGE="ghcr.io/graalvm/jdk-community:21"
+  graalvm|graalvm-jit)
+    export JVM_VARIANT="graalvm-jit"
+    export RUNTIME_IMAGE="container-registry.oracle.com/graalvm/jdk:21"
     ;;
   *)
     echo "Unknown JVM variant: ${variant}" >&2
-    echo "Usage: $0 [hotspot|openj9|graalvm]" >&2
+    echo "Usage: $0 [hotspot-work|openj9|graalvm-jit]" >&2
     exit 1
     ;;
 esac
