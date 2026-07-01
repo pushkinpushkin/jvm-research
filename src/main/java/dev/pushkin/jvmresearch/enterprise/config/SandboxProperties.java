@@ -20,7 +20,7 @@ public record SandboxProperties(
 
     public record Chaos(
             boolean enabled,
-            int externalApiTimeoutPercent,
+            int externalApiLongDelayPercent,
             int externalApiErrorPercent,
             int externalApiMalformedPercent,
             int externalApiSlowPercent,
