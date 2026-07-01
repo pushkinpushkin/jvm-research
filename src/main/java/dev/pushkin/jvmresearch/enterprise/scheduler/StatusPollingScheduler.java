@@ -52,10 +52,10 @@ public class StatusPollingScheduler {
         try {
             ExternalSignStatusResponse response = externalApiClient.getSignStatus(order.getExternalRequestId());
             if (response == null) {
-                throw new IllegalStateException("External sign status response is null");
+                throw new IllegalStateException("External status response is null");
             }
 
-            if ("DOCS_SIGNED".equals(response.status())) {
+            if ("DONE".equals(response.status())) {
                 order.setStatus(OrderStatus.COMPLETED);
                 order.getGoskeyProcess().setStatus(response.status());
             } else if (response.status() != null && response.status().endsWith("FAILED")) {
@@ -66,7 +66,7 @@ public class StatusPollingScheduler {
                 order.getGoskeyProcess().setStatus(response.status());
             }
 
-            order.addHistory(order.getStatus().name(), "status-polling-scheduler", "External sign status polled", Instant.now());
+            order.addHistory(order.getStatus().name(), "status-polling-scheduler", "External status polled", Instant.now());
             order.setUpdatedAt(Instant.now());
             OrderDocument saved = repository.save(order);
             eventPublisher.publishOrderStatusChanged(saved, "status-polling-scheduler");
