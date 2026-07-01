@@ -20,9 +20,9 @@ public class ChaosPolicy {
         }
 
         int bucket = bucket(key, point, "external");
-        int threshold = properties.chaos().externalApiTimeoutPercent();
+        int threshold = properties.chaos().externalApiLongDelayPercent();
         if (bucket < threshold) {
-            return ExternalMode.TIMEOUT;
+            return ExternalMode.LONG_DELAY;
         }
 
         threshold += properties.chaos().externalApiErrorPercent();
