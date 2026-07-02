@@ -1,6 +1,6 @@
 # JVM Research Sandbox
 
-Песочница для сравнения поведения разных JVM на одинаковом Java-коде: рабочий HotSpot baseline, OpenJ9 и GraalVM JIT.
+Песочница для сравнения поведения разных JVM на одинаковом Java-коде: generic HotSpot baseline, OpenJ9 и GraalVM JIT.
 
 Цель репозитория — быстро получать воспроизводимые замеры, а потом переносить подход на реальные микросервисы.
 
@@ -8,7 +8,7 @@
 
 | Variant | JVM type | Image | Role |
 |---|---|---|---|
-| `hotspot-work` | HotSpot / BellSoft Liberica | `registry.example.invalid/bellsoft/liberica-openjre-alpine:21.0.11-11` | рабочий baseline |
+| `hotspot-generic` | HotSpot / Eclipse Temurin | `eclipse-temurin:21-jre` | generic HotSpot baseline |
 | `openj9` | Eclipse OpenJ9 / IBM Semeru | `ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy` | эталонный OpenJ9 |
 | `graalvm-jit` | Oracle GraalVM JDK | `container-registry.oracle.com/graalvm/jdk:21` | GraalVM в JVM/JIT режиме |
 
@@ -79,9 +79,9 @@ chmod +x gradlew scripts/*.sh
 ./gradlew jmh
 ```
 
-## Work-like experiment profiles
+## Production-like experiment profiles
 
-Профили в `profiles/` повторяют форму pod'а из рабочего Helm values:
+Профили в `profiles/` повторяют generic production-like форму pod'а:
 
 ```text
 replicaCount: 3
@@ -145,7 +145,7 @@ results/<RUN_ID>/
 curl http://localhost:8080/run-info
 ```
 
-`/run-info` возвращает JVM vendor/name/version, `inputArguments`, heap, processors, `RUN_ID`, профиль и ссылку на рабочие Helm-настройки.
+`/run-info` возвращает JVM vendor/name/version, `inputArguments`, heap, processors, `RUN_ID`, профиль и ссылку на generic production-like настройки.
 
 ## Enterprise sandbox layer
 
@@ -160,7 +160,7 @@ HTTP -> MongoDB -> WireMock external API -> mapping -> MongoDB -> Kafka -> sched
 Быстрый запуск:
 
 ```bash
-bash scripts/run-enterprise-sandbox.sh hotspot-work
+bash scripts/run-enterprise-sandbox.sh hotspot-generic
 bash scripts/run-enterprise-sandbox.sh openj9
 bash scripts/run-enterprise-sandbox.sh graalvm-jit
 ```
@@ -185,7 +185,7 @@ RATE=20 DURATION=5m ORDER_POOL=10000 bash scripts/run-load.sh
 
 ## Docker-сборка JVM-вариантов
 
-Dockerfile-ы запускают уже собранный runtime distribution и JMH jar. Это нужно, потому что рабочий HotSpot baseline использует OpenJRE-образ, а не JDK-образ.
+Dockerfile-ы запускают уже собранный runtime distribution и JMH jar.
 
 Сначала собрать артефакты:
 
@@ -196,7 +196,7 @@ Dockerfile-ы запускают уже собранный runtime distribution 
 Потом собрать runtime-образы для JMH/runtime слоя:
 
 ```bash
-docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-work .
+docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-generic .
 docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
 docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
 ```
@@ -204,7 +204,7 @@ docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
 Запуск Spring Boot-приложения:
 
 ```bash
-docker run --rm jvm-research:hotspot-work
+docker run --rm jvm-research:hotspot-generic
 docker run --rm jvm-research:openj9
 docker run --rm jvm-research:graalvm-jit
 ```
@@ -212,7 +212,7 @@ docker run --rm jvm-research:graalvm-jit
 Запуск JMH внутри runtime-контейнера:
 
 ```bash
-docker run --rm -v "$PWD/results:/results" jvm-research:hotspot-work java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/hotspot-work-jmh.json
+docker run --rm -v "$PWD/results:/results" jvm-research:hotspot-generic java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/hotspot-generic-jmh.json
 docker run --rm -v "$PWD/results:/results" jvm-research:openj9 java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/openj9-jmh.json
 docker run --rm -v "$PWD/results:/results" jvm-research:graalvm-jit java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/graalvm-jit-jmh.json
 ```
@@ -220,7 +220,7 @@ docker run --rm -v "$PWD/results:/results" jvm-research:graalvm-jit java -jar /o
 Для enterprise sandbox используется корневой `Dockerfile` с runtime image как build arg:
 
 ```bash
-docker build --build-arg RUNTIME_IMAGE=registry.example.invalid/bellsoft/liberica-openjre-alpine:21.0.11-11 -t jvm-research-sandbox:hotspot-work .
+docker build --build-arg RUNTIME_IMAGE=eclipse-temurin:21-jre -t jvm-research-sandbox:hotspot-generic .
 docker build --build-arg RUNTIME_IMAGE=ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy -t jvm-research-sandbox:openj9 .
 docker build --build-arg RUNTIME_IMAGE=container-registry.oracle.com/graalvm/jdk:21 -t jvm-research-sandbox:graalvm-jit .
 ```
