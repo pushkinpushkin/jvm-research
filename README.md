@@ -35,7 +35,6 @@
 │   ├── collect-runtime-metrics.sh
 │   ├── run-enterprise-sandbox.sh
 │   └── run-load.sh
-├── src/main/java/dev/pushkin/jvmresearch/SandboxApp.java
 ├── src/main/java/dev/pushkin/jvmresearch/enterprise/
 ├── src/jmh/java/dev/pushkin/jvmresearch/AllocationBenchmark.java
 ├── src/jmh/java/dev/pushkin/jvmresearch/StringProcessingBenchmark.java
@@ -47,18 +46,19 @@
     └── metrics.md
 ```
 
-## Два уровня исследования
+## Единый entrypoint
 
-### 1. JMH / synthetic JVM layer
-
-Микробенчмарки и простой `SandboxApp` нужны, чтобы отдельно смотреть:
+Основное приложение одно:
 
 ```text
-- allocations;
-- string processing;
-- startup;
-- warmup;
-- heap/GC на простом CPU + allocation сценарии.
+dev.pushkin.jvmresearch.enterprise.EnterpriseSandboxApplication
+```
+
+Внутри него есть два типа сценариев:
+
+```text
+1. /synthetic/runtime — быстрый CPU/allocation smoke внутри Spring Boot.
+2. /orders/{orderId}/process — enterprise flow с MongoDB, WireMock, Kafka и scheduler'ами.
 ```
 
 Если Gradle Wrapper ещё не сгенерирован локально:
@@ -75,7 +75,7 @@ chmod +x gradlew scripts/*.sh
 ./gradlew jmh
 ```
 
-### 2. Enterprise sandbox layer
+## Enterprise sandbox layer
 
 Spring Boot-приложение имитирует типовой микросервисный flow:
 
@@ -98,6 +98,7 @@ bash scripts/run-enterprise-sandbox.sh graalvm-jit
 Проверка API:
 
 ```bash
+curl -X POST 'http://localhost:8080/synthetic/runtime?iterations=20&payloadSize=100000'
 curl -X POST 'http://localhost:8080/orders/generate?count=10000'
 curl -X POST 'http://localhost:8080/orders/order-1/process'
 curl 'http://localhost:8080/orders/order-1'
@@ -120,7 +121,7 @@ Dockerfile-ы запускают уже собранный runtime distribution 
 ./gradlew clean test installDist jmhJar
 ```
 
-Потом собрать runtime-образы для JMH/simple runtime слоя:
+Потом собрать runtime-образы для JMH/runtime слоя:
 
 ```bash
 docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-work .
@@ -128,7 +129,7 @@ docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
 docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
 ```
 
-Запуск sandbox-приложения:
+Запуск Spring Boot-приложения:
 
 ```bash
 docker run --rm jvm-research:hotspot-work
