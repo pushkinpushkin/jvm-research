@@ -21,3 +21,7 @@ replay_pid*
 
 # Local env
 .env
+
+# Local infra data
+infra/mongo-data/
+*.log
