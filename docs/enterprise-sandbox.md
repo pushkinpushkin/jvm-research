@@ -129,6 +129,24 @@ bash scripts/run-enterprise-sandbox.sh openj9
 bash scripts/run-enterprise-sandbox.sh graalvm-jit
 ```
 
+Если хочется заранее скачать внешние образы, не запускай обычный `docker compose pull`: `sandbox-service` собирается локально и не существует в registry. Используй один из вариантов:
+
+```bash
+docker compose -f infra/docker-compose.yml pull --ignore-buildable
+```
+
+или явно только зависимости:
+
+```bash
+docker compose -f infra/docker-compose.yml pull mongo kafka wiremock
+```
+
+После этого:
+
+```bash
+docker compose -f infra/docker-compose.yml up --build
+```
+
 Нагрузка:
 
 ```bash
