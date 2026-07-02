@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/external/fns-data/[^/]+",
+    "queryParameters": {
+      "mode": {
+        "equalTo": "slow"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "fixedDelayMilliseconds": 1200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "orderId": "{{request.pathSegments.[2]}}",
+      "registeringFns": "7800",
+      "registeringFnsName": "Synthetic FNS Saint Petersburg",
+      "externalStatus": "FNS_OK",
+      "riskScore": "MEDIUM"
+    },
+    "transformers": ["response-template"]
+  }
+}
