@@ -2,9 +2,9 @@
 
 ## Зачем нужна матрица
 
-В исследовании сравниваем не абстрактные JVM, а конкретные runtime-варианты, которые можно воспроизвести:
+В исследовании сравниваем не абстрактные JVM, а конкретные runtime-варианты, которые можно воспроизвести в публичном окружении:
 
-1. рабочий production-like baseline;
+1. generic HotSpot baseline;
 2. альтернативная JVM с другим memory/runtime профилем;
 3. GraalVM JIT как популярный эталон для сравнений.
 
@@ -12,17 +12,15 @@
 
 | Variant | JVM type | Image | Role |
 |---|---|---|---|
-| `hotspot-work` | HotSpot / BellSoft Liberica | `registry.example.invalid/bellsoft/liberica-openjre-alpine:21.0.11-11` | рабочий baseline, максимально близкий к микросервисам |
+| `hotspot-generic` | HotSpot / Eclipse Temurin | `eclipse-temurin:21-jre` | generic HotSpot baseline |
 | `openj9` | Eclipse OpenJ9 / IBM Semeru | `ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy` | эталонный OpenJ9 runtime для сравнения memory footprint / warmup |
 | `graalvm-jit` | Oracle GraalVM JDK | `container-registry.oracle.com/graalvm/jdk:21` | GraalVM в JVM/JIT режиме, без Native Image |
 
 ## Почему так
 
-### HotSpot / BellSoft Liberica
+### HotSpot / Eclipse Temurin
 
-Это главный baseline, потому что он ближе всего к рабочему окружению. Его задача не победить в бенчмарках, а ответить на вопрос: лучше или хуже альтернативы относительно текущей реальности.
-
-Важно: этот образ внутренний. В публичном окружении он может не скачаться без доступа к корпоративному registry.
+Это публичный generic baseline для сравнения. Его задача не победить в бенчмарках, а дать стабильную точку отсчета для HotSpot на Java 21.
 
 ### OpenJ9 / IBM Semeru
 
@@ -45,7 +43,7 @@
 
 ## Почему не берём Java 25 как основной baseline
 
-Java 25 уже актуален как новая линия, но рабочие микросервисы и предыдущий план исследования завязаны на Java 21. Для прикладного вывода важнее сравнить разные JVM на одном LTS уровне, чем смешивать JVM runtime и переход на новую Java-версию.
+Java 25 уже актуален как новая линия, но предыдущий план исследования завязан на Java 21. Для прикладного вывода важнее сравнить разные JVM на одном LTS уровне, чем смешивать JVM runtime и переход на новую Java-версию.
 
 Java 25 можно добавить позже как отдельную ось:
 
@@ -67,7 +65,7 @@ GraalVM 21 vs GraalVM 25
 ## Команды сборки
 
 ```bash
-docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-work .
+docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-generic .
 docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
 docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
 ```
@@ -87,6 +85,6 @@ docker build \
 
 | Variant | Java version | JVM name | OS base | Startup | Warmup | Throughput | RSS | Heap | GC |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|
-| hotspot-work | TBD | TBD | Alpine | TBD | TBD | TBD | TBD | TBD | TBD |
+| hotspot-generic | TBD | TBD | Debian/Ubuntu based | TBD | TBD | TBD | TBD | TBD | TBD |
 | openj9 | TBD | TBD | Ubuntu Jammy | TBD | TBD | TBD | TBD | TBD | TBD |
 | graalvm-jit | TBD | TBD | Oracle Linux based | TBD | TBD | TBD | TBD | TBD | TBD |
