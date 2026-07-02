@@ -4,26 +4,18 @@ import dev.pushkin.jvmresearch.enterprise.domain.OrderDocument;
 import dev.pushkin.jvmresearch.enterprise.repository.OrderRepository;
 import java.time.Instant;
 import java.util.ArrayList;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class BusinessEventListener {
-
-    private static final Logger log = LoggerFactory.getLogger(BusinessEventListener.class);
 
     private final OrderRepository repository;
     private final InMemoryBusinessEventDeduplicationService deduplicationService;
-
-    public BusinessEventListener(
-            OrderRepository repository,
-            InMemoryBusinessEventDeduplicationService deduplicationService
-    ) {
-        this.repository = repository;
-        this.deduplicationService = deduplicationService;
-    }
 
     @KafkaListener(topics = "${sandbox.kafka.business-event-topic}")
     public void onBusinessEvent(BusinessEvent event) {
@@ -51,7 +43,7 @@ public class BusinessEventListener {
         order.getProcessedBusinessEvents().add(event.eventId());
         order.addHistory(
                 event.status(),
-                StatusEvents.SOURCE_BUSINESS_EVENT_CONSUMER,
+                BusinessEventSource.BUSINESS_EVENT_CONSUMER.value(),
                 "Business event processed: " + event.type(),
                 Instant.now()
         );
@@ -69,6 +61,6 @@ public class BusinessEventListener {
     }
 
     private String eventType(BusinessEvent event) {
-        return event == null ? "n/a" : event.type();
+        return event == null ? "n/a" : event.type().name();
     }
 }

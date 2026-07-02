@@ -3,16 +3,14 @@ package dev.pushkin.jvmresearch.enterprise.service;
 import dev.pushkin.jvmresearch.enterprise.config.SandboxProperties;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class PayloadBuilder {
 
     private final SandboxProperties properties;
-
-    public PayloadBuilder(SandboxProperties properties) {
-        this.properties = properties;
-    }
 
     public Map<String, Object> createPayload(String orderId) {
         Map<String, Object> payload = new LinkedHashMap<>();

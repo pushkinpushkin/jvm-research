@@ -5,7 +5,7 @@ import java.util.Map;
 public record BusinessEvent(
         String eventId,
         String orderId,
-        String type,
+        BusinessEventType type,
         String status,
         String occurredAt,
         Map<String, Object> payload

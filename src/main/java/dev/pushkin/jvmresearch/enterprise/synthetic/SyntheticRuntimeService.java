@@ -9,12 +9,15 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 public class SyntheticRuntimeService {
 
     public SyntheticRuntimeResponse run(int iterations, int payloadSize) {
+        log.info("Synthetic runtime workload started iterations={} payloadSize={}", iterations, payloadSize);
         Instant startedAt = Instant.now();
         List<Long> samples = new ArrayList<>(iterations);
         long checksum = 0L;
@@ -27,7 +30,7 @@ public class SyntheticRuntimeService {
         }
 
         samples.sort(Comparator.naturalOrder());
-        return new SyntheticRuntimeResponse(
+        SyntheticRuntimeResponse response = new SyntheticRuntimeResponse(
                 iterations,
                 payloadSize,
                 Duration.between(startedAt, Instant.now()).toMillis(),
@@ -38,6 +41,13 @@ public class SyntheticRuntimeService {
                 gcCount(),
                 checksum
         );
+        log.info("Synthetic runtime workload finished iterations={} payloadSize={} durationMs={} p95Ms={}",
+                iterations,
+                payloadSize,
+                response.uptimeMs(),
+                response.p95Ms()
+        );
+        return response;
     }
 
     private long doCpuAndAllocationWork(int payloadSize) {

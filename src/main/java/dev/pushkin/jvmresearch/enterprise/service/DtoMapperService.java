@@ -16,7 +16,7 @@ public class DtoMapperService {
         mapped.put("registeringFnsName", response.registeringFnsName());
         mapped.put("externalStatus", response.externalStatus());
         mapped.put("riskScore", response.riskScore());
-        mapped.put("clientType", order.getClientType());
+        mapped.put("clientType", order.getClientType().name());
         mapped.put("payloadSize", mapped.size());
         return mapped;
     }

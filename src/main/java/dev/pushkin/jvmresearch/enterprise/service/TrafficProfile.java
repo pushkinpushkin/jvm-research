@@ -2,16 +2,15 @@ package dev.pushkin.jvmresearch.enterprise.service;
 
 import dev.pushkin.jvmresearch.enterprise.config.SandboxProperties;
 import dev.pushkin.jvmresearch.enterprise.external.ExternalMode;
+import dev.pushkin.jvmresearch.enterprise.kafka.BusinessEventType;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class TrafficProfile {
 
     private final SandboxProperties properties;
-
-    public TrafficProfile(SandboxProperties properties) {
-        this.properties = properties;
-    }
 
     public ExternalMode externalMode(String key, String point) {
         if (!properties.profile().enabled()) {
@@ -47,9 +46,9 @@ public class TrafficProfile {
                 && value(orderId, point, "mongo") < properties.profile().mongoConflictPercent();
     }
 
-    public boolean duplicateKafkaEvent(String orderId, String eventType) {
+    public boolean duplicateKafkaEvent(String orderId, BusinessEventType eventType) {
         return properties.profile().enabled()
-                && value(orderId, eventType, "kafka") < properties.profile().kafkaDuplicatePercent();
+                && value(orderId, eventType.name(), "kafka") < properties.profile().kafkaDuplicatePercent();
     }
 
     private int value(String key, String point, String salt) {

@@ -1,20 +1,27 @@
 package dev.pushkin.jvmresearch.enterprise.service;
 
 import dev.pushkin.jvmresearch.enterprise.config.SandboxProperties;
+import dev.pushkin.jvmresearch.enterprise.domain.ClientType;
+import dev.pushkin.jvmresearch.enterprise.domain.FnsProcessStatus;
 import dev.pushkin.jvmresearch.enterprise.domain.OrderDocument;
 import dev.pushkin.jvmresearch.enterprise.domain.OrderStatus;
 import dev.pushkin.jvmresearch.enterprise.external.ExternalApiClient;
 import dev.pushkin.jvmresearch.enterprise.external.ExternalFnsResponse;
+import dev.pushkin.jvmresearch.enterprise.kafka.BusinessEventSource;
 import dev.pushkin.jvmresearch.enterprise.kafka.EnterpriseEventPublisher;
 import dev.pushkin.jvmresearch.enterprise.repository.OrderRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.Objects;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class OrderFlowService {
 
     private final OrderRepository repository;
@@ -25,32 +32,15 @@ public class OrderFlowService {
     private final PayloadBuilder payloadBuilder;
     private final SandboxProperties properties;
 
-    public OrderFlowService(
-            OrderRepository repository,
-            ExternalApiClient externalApiClient,
-            DtoMapperService dtoMapperService,
-            EnterpriseEventPublisher eventPublisher,
-            TrafficProfile trafficProfile,
-            PayloadBuilder payloadBuilder,
-            SandboxProperties properties
-    ) {
-        this.repository = repository;
-        this.externalApiClient = externalApiClient;
-        this.dtoMapperService = dtoMapperService;
-        this.eventPublisher = eventPublisher;
-        this.trafficProfile = trafficProfile;
-        this.payloadBuilder = payloadBuilder;
-        this.properties = properties;
-    }
-
     public ProcessOrderResponse process(String orderId) {
+        log.info("Order processing started orderId={}", orderId);
         OrderDocument order = repository.findById(orderId)
-                .orElseGet(() -> OrderDocument.newOrder(orderId, "INDIVIDUAL", "client-" + orderId, payloadBuilder.createPayload(orderId)));
+                .orElseGet(() -> OrderDocument.newOrder(orderId, ClientType.INDIVIDUAL, "client-" + orderId, payloadBuilder.createPayload(orderId)));
 
         Instant now = Instant.now();
         order.setStatus(OrderStatus.PROCESSING);
         order.setUpdatedAt(now);
-        order.addHistory(OrderStatus.PROCESSING.name(), "http", "HTTP flow started", now);
+        order.addHistory(OrderStatus.PROCESSING.name(), BusinessEventSource.HTTP.value(), "HTTP flow started", now);
 
         try {
             ExternalFnsResponse fnsResponse = Objects.requireNonNull(
@@ -58,35 +48,38 @@ public class OrderFlowService {
                     "External FNS response is null"
             );
             Map<String, Object> mappedPayload = dtoMapperService.mergeExternalFnsData(order, fnsResponse);
+            FnsProcessStatus fnsStatus = FnsProcessStatus.fromExternal(fnsResponse.externalStatus());
 
-            order.getFnsProcess().setStatus(fnsResponse.externalStatus());
+            order.getFnsProcess().setStatus(fnsStatus);
             order.getFnsProcess().setRegisteringFns(fnsResponse.registeringFns());
             order.getFnsProcess().setRegisteringFnsName(fnsResponse.registeringFnsName());
             order.getFnsProcess().setAttempts(order.getFnsProcess().getAttempts() + 1);
             order.setPayload(mappedPayload);
-            order.setStatus("FNS_OK".equals(fnsResponse.externalStatus()) ? OrderStatus.WAITING_EXTERNAL_STATUS : OrderStatus.PROCESSING);
+            order.setStatus(fnsStatus.isSuccessful() ? OrderStatus.WAITING_EXTERNAL_STATUS : OrderStatus.PROCESSING);
             order.setUpdatedAt(Instant.now());
-            order.addHistory(order.getStatus().name(), "external-api", "FNS data mapped", Instant.now());
+            order.addHistory(order.getStatus().name(), BusinessEventSource.EXTERNAL_API.value(), "FNS data mapped", Instant.now());
 
-            if (trafficProfile.mongoConflict(orderId, "http-process")) {
+            if (trafficProfile.mongoConflict(orderId, BusinessEventSource.HTTP_PROCESS.value())) {
                 throw new OptimisticLockingFailureException("Synthetic Mongo optimistic locking conflict for " + orderId);
             }
 
             trimHistory(order);
             OrderDocument saved = repository.save(order);
-            eventPublisher.publishOrderStatusChanged(saved, "http-process");
+            eventPublisher.publishOrderStatusChanged(saved, BusinessEventSource.HTTP_PROCESS);
+            log.info("Order processing finished orderId={} status={} version={}", saved.getId(), saved.getStatus(), version(saved));
             return new ProcessOrderResponse(saved.getId(), saved.getStatus().name(), "processed", version(saved));
         } catch (RuntimeException ex) {
-            OrderDocument failed = saveFailed(order, ex, "http-process");
-            eventPublisher.publishOrderStatusChanged(failed, "http-process-failed");
+            log.warn("Order processing failed orderId={} errorType={} message={}", orderId, ex.getClass().getSimpleName(), sanitize(ex.getMessage()));
+            OrderDocument failed = saveFailed(order, ex, BusinessEventSource.HTTP_PROCESS);
+            eventPublisher.publishOrderStatusChanged(failed, BusinessEventSource.HTTP_PROCESS_FAILED);
             return new ProcessOrderResponse(failed.getId(), failed.getStatus().name(), sanitize(ex.getMessage()), version(failed));
         }
     }
 
-    private OrderDocument saveFailed(OrderDocument order, RuntimeException ex, String source) {
+    private OrderDocument saveFailed(OrderDocument order, RuntimeException ex, BusinessEventSource source) {
         order.setStatus(OrderStatus.FAILED);
         order.getFnsProcess().setFailMessage(sanitize(ex.getMessage()));
-        order.addHistory(OrderStatus.FAILED.name(), source, sanitize(ex.getClass().getSimpleName() + ": " + ex.getMessage()), Instant.now());
+        order.addHistory(OrderStatus.FAILED.name(), source.value(), sanitize(ex.getClass().getSimpleName() + ": " + ex.getMessage()), Instant.now());
         order.setUpdatedAt(Instant.now());
         trimHistory(order);
         return repository.save(order);

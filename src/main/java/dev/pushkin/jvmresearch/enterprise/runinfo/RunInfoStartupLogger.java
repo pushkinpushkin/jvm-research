@@ -1,21 +1,17 @@
 package dev.pushkin.jvmresearch.enterprise.runinfo;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class RunInfoStartupLogger implements ApplicationRunner {
 
-    private static final Logger log = LoggerFactory.getLogger(RunInfoStartupLogger.class);
-
     private final RunInfoService service;
-
-    public RunInfoStartupLogger(RunInfoService service) {
-        this.service = service;
-    }
 
     @Override
     public void run(ApplicationArguments args) {

@@ -1,5 +1,6 @@
 package dev.pushkin.jvmresearch.enterprise.synthetic;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -7,13 +8,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/synthetic")
+@RequiredArgsConstructor
 public class SyntheticRuntimeController {
 
     private final SyntheticRuntimeService service;
-
-    public SyntheticRuntimeController(SyntheticRuntimeService service) {
-        this.service = service;
-    }
 
     @PostMapping("/runtime")
     public SyntheticRuntimeResponse run(

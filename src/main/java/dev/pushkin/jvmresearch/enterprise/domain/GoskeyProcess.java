@@ -1,23 +1,12 @@
 package dev.pushkin.jvmresearch.enterprise.domain;
 
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
 public class GoskeyProcess {
 
-    private String status;
+    private GoskeyProcessStatus status;
     private String failMessage;
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public String getFailMessage() {
-        return failMessage;
-    }
-
-    public void setFailMessage(String failMessage) {
-        this.failMessage = failMessage;
-    }
 }

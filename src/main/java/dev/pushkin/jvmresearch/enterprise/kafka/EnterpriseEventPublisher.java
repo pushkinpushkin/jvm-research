@@ -6,39 +6,33 @@ import dev.pushkin.jvmresearch.enterprise.service.TrafficProfile;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class EnterpriseEventPublisher {
 
     private final KafkaTemplate<String, BusinessEvent> kafkaTemplate;
     private final SandboxProperties properties;
     private final TrafficProfile trafficProfile;
 
-    public EnterpriseEventPublisher(
-            KafkaTemplate<String, BusinessEvent> kafkaTemplate,
-            SandboxProperties properties,
-            TrafficProfile trafficProfile
-    ) {
-        this.kafkaTemplate = kafkaTemplate;
-        this.properties = properties;
-        this.trafficProfile = trafficProfile;
-    }
-
-    public void publishOrderStatusChanged(OrderDocument order, String source) {
+    public void publishOrderStatusChanged(OrderDocument order, BusinessEventSource source) {
         BusinessEvent event = new BusinessEvent(
                 UUID.randomUUID().toString(),
                 order.getId(),
-                "ORDER_STATUS_CHANGED",
+                BusinessEventType.ORDER_STATUS_CHANGED,
                 order.getStatus().name(),
                 Instant.now().toString(),
-                Map.of("source", source, "version", String.valueOf(order.getVersion()))
+                Map.of("source", source.value(), "version", String.valueOf(order.getVersion()))
         );
         publishWithOptionalDuplicate(properties.kafka().orderStatusTopic(), order.getId(), event);
     }
 
-    public void publishBusinessEvent(OrderDocument order, String businessEventType) {
+    public void publishBusinessEvent(OrderDocument order, BusinessEventType businessEventType) {
         BusinessEvent event = new BusinessEvent(
                 UUID.randomUUID().toString(),
                 order.getId(),
@@ -52,8 +46,10 @@ public class EnterpriseEventPublisher {
 
     private void publishWithOptionalDuplicate(String topic, String key, BusinessEvent event) {
         kafkaTemplate.send(topic, key, event);
+        log.info("Kafka event published topic={} key={} eventId={} type={} status={}", topic, key, event.eventId(), event.type(), event.status());
         if (trafficProfile.duplicateKafkaEvent(key, event.type())) {
             kafkaTemplate.send(topic, key, event);
+            log.info("Synthetic Kafka duplicate published topic={} key={} eventId={} type={}", topic, key, event.eventId(), event.type());
         }
     }
 }

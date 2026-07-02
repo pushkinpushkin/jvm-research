@@ -6,6 +6,7 @@ import dev.pushkin.jvmresearch.enterprise.service.GenerateOrdersResponse;
 import dev.pushkin.jvmresearch.enterprise.service.OrderFlowService;
 import dev.pushkin.jvmresearch.enterprise.service.OrderSeedService;
 import dev.pushkin.jvmresearch.enterprise.service.ProcessOrderResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,21 +17,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/orders")
+@RequiredArgsConstructor
 public class OrderFlowController {
 
     private final OrderFlowService flowService;
     private final OrderSeedService seedService;
     private final OrderRepository repository;
-
-    public OrderFlowController(
-            OrderFlowService flowService,
-            OrderSeedService seedService,
-            OrderRepository repository
-    ) {
-        this.flowService = flowService;
-        this.seedService = seedService;
-        this.repository = repository;
-    }
 
     @PostMapping("/{orderId}/process")
     public ProcessOrderResponse process(@PathVariable String orderId) {
