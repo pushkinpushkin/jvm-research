@@ -4,8 +4,8 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        RUNTIME_IMAGE: ${RUNTIME_IMAGE:-eclipse-temurin:21-jre}
-    image: jvm-research-sandbox:${JVM_VARIANT:-hotspot-work}
+        RUNTIME_IMAGE: ${RUNTIME_IMAGE:-bellsoft/liberica-openjre-alpine:21.0.11-11}
+    image: jvm-research-sandbox:${JVM_VARIANT:-hotspot-liberica}
     cpus: "${CONTAINER_CPU_LIMIT:-1}"
     mem_limit: ${CONTAINER_MEMORY_LIMIT:-1g}
     ports:
@@ -26,17 +26,11 @@ services:
       SANDBOX_KAFKA_DUPLICATE_PERCENT: "5"
       RUN_ID: ${RUN_ID:-local}
       RUN_PROFILE: ${RUN_PROFILE:-local}
-      JVM_VARIANT: ${JVM_VARIANT:-hotspot-work}
+      JVM_VARIANT: ${JVM_VARIANT:-hotspot-liberica}
       JVM_PROFILE: ${JVM_PROFILE:-local}
       GIT_SHA: ${GIT_SHA:-unknown}
       CONTAINER_CPU_LIMIT: ${CONTAINER_CPU_LIMIT:-1}
       CONTAINER_MEMORY_LIMIT: ${CONTAINER_MEMORY_LIMIT:-1g}
-      WORK_CPU_REQUEST: ${WORK_CPU_REQUEST:-10m}
-      WORK_CPU_LIMIT: ${WORK_CPU_LIMIT:-1}
-      WORK_MEMORY_REQUEST: ${WORK_MEMORY_REQUEST:-512Mi}
-      WORK_MEMORY_LIMIT: ${WORK_MEMORY_LIMIT:-1Gi}
-      WORK_TIMEZONE: ${WORK_TIMEZONE:-Europe/Moscow}
-      WORK_EXTRA_JAVA_OPTS: ${WORK_EXTRA_JAVA_OPTS:--Dserver.max-http-request-header-size=30000}
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:-}
     volumes:
       - ${RUN_RESULTS_DIR:-../results/local}/app-logs:/app/logs
