@@ -1,5 +1,5 @@
 ARG BUILDER_IMAGE=gradle:8.14-jdk21
-ARG RUNTIME_IMAGE=eclipse-temurin:21-jre
+ARG RUNTIME_IMAGE=bellsoft/liberica-openjre-alpine:21.0.11-11
 
 FROM ${BUILDER_IMAGE} AS build
 
