@@ -1,4 +1,6 @@
 ARG BUILDER_IMAGE=gradle:8.14-jdk21
+ARG RUNTIME_IMAGE=eclipse-temurin:21-jre
+
 FROM ${BUILDER_IMAGE} AS build
 
 WORKDIR /workspace
@@ -6,7 +8,6 @@ COPY settings.gradle.kts build.gradle.kts ./
 COPY src ./src
 RUN gradle --no-daemon clean bootJar
 
-ARG RUNTIME_IMAGE=eclipse-temurin:21-jre
 FROM ${RUNTIME_IMAGE}
 
 WORKDIR /app
