@@ -29,10 +29,14 @@
 │   ├── docker-compose.yml
 │   └── wiremock/mappings/
 ├── load/k6/enterprise-flow.js
+├── profiles/
+│   ├── work-hotspot-baseline.env
+│   ├── work-openj9-baseline.env
+│   └── work-graalvm-baseline.env
 ├── scripts/
 │   ├── run-benchmarks.sh
 │   ├── run-app.sh
-│   ├── collect-runtime-metrics.sh
+│   ├── run-experiment.sh
 │   ├── run-enterprise-sandbox.sh
 │   └── run-load.sh
 ├── src/main/java/dev/pushkin/jvmresearch/enterprise/
@@ -74,6 +78,74 @@ chmod +x gradlew scripts/*.sh
 ./gradlew test
 ./gradlew jmh
 ```
+
+## Work-like experiment profiles
+
+Профили в `profiles/` повторяют форму pod'а из рабочего Helm values:
+
+```text
+replicaCount: 3
+container cpu limit: 1
+container memory limit: 1Gi
+java heap: 512Mi
+port: 8080
+timezone: Europe/Moscow
+prometheus: enabled
+extraJavaOpts: -Dserver.max-http-request-header-size=30000
+```
+
+Локально моделируются именно runtime-ограничения процесса:
+
+```text
+Kubernetes limits.cpu=1        -> docker compose cpus=1
+Kubernetes limits.memory=1Gi   -> docker compose mem_limit=1g
+Kubernetes requests.memory=512Mi -> -Xms512m -Xmx512m
+app.timezone=Europe/Moscow     -> TZ + -Duser.timezone
+app.extraJavaOpts              -> JAVA_TOOL_OPTIONS
+```
+
+Запуск полного эксперимента:
+
+```bash
+bash scripts/run-experiment.sh profiles/work-hotspot-baseline.env
+bash scripts/run-experiment.sh profiles/work-openj9-baseline.env
+bash scripts/run-experiment.sh profiles/work-graalvm-baseline.env
+```
+
+Можно переопределить нагрузку:
+
+```bash
+RATE=30 DURATION=10m ORDER_POOL=20000 bash scripts/run-experiment.sh profiles/work-hotspot-baseline.env
+```
+
+Каждый прогон сохраняется в отдельную директорию:
+
+```text
+results/<RUN_ID>/
+  metadata.json
+  run-info.json
+  health.json
+  synthetic-runtime.json
+  k6-summary.json
+  k6.log
+  prometheus-before.txt
+  prometheus-after.txt
+  app.log
+  docker-compose-ps.txt
+  docker-stats.txt
+  app-logs/gc.log
+  jcmd-vm-command-line.txt
+  jcmd-vm-flags.txt
+  jcmd-vm-system-properties.txt
+```
+
+Проверить, какие JVM-ключи реально увидел процесс:
+
+```bash
+curl http://localhost:8080/run-info
+```
+
+`/run-info` возвращает JVM vendor/name/version, `inputArguments`, heap, processors, `RUN_ID`, профиль и ссылку на рабочие Helm-настройки.
 
 ## Enterprise sandbox layer
 
