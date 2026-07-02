@@ -1,0 +1,60 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: jvm-research-enterprise-sandbox
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/jvm_research}
+      auto-index-creation: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      auto-create: true
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP:jvm-research-sandbox}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: dev.pushkin.jvmresearch.enterprise.kafka,java.util,java.lang
+        spring.json.value.default.type: dev.pushkin.jvmresearch.enterprise.kafka.BusinessEvent
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+sandbox:
+  flow:
+    history-items: ${SANDBOX_HISTORY_ITEMS:40}
+    payload-entries: ${SANDBOX_PAYLOAD_ENTRIES:60}
+    payload-value-size: ${SANDBOX_PAYLOAD_VALUE_SIZE:300}
+  profile:
+    enabled: ${SANDBOX_PROFILE_ENABLED:true}
+    external-api-long-delay-percent: ${SANDBOX_EXTERNAL_LONG_DELAY_PERCENT:3}
+    external-api-error-percent: ${SANDBOX_EXTERNAL_ERROR_PERCENT:5}
+    external-api-invalid-percent: ${SANDBOX_EXTERNAL_INVALID_PERCENT:2}
+    external-api-slow-percent: ${SANDBOX_EXTERNAL_SLOW_PERCENT:15}
+    mongo-conflict-percent: ${SANDBOX_MONGO_CONFLICT_PERCENT:2}
+    kafka-duplicate-percent: ${SANDBOX_KAFKA_DUPLICATE_PERCENT:5}
+  scheduler:
+    retry-enabled: ${SANDBOX_RETRY_SCHEDULER_ENABLED:true}
+    retry-fixed-delay-ms: ${SANDBOX_RETRY_FIXED_DELAY_MS:5000}
+    retry-batch-size: ${SANDBOX_RETRY_BATCH_SIZE:100}
+    status-polling-enabled: ${SANDBOX_STATUS_POLLING_ENABLED:true}
+    status-polling-fixed-delay-ms: ${SANDBOX_STATUS_POLLING_FIXED_DELAY_MS:7000}
+    status-polling-batch-size: ${SANDBOX_STATUS_POLLING_BATCH_SIZE:100}
+  kafka:
+    order-status-topic: ${SANDBOX_ORDER_STATUS_TOPIC:order.status.changed}
+    business-event-topic: ${SANDBOX_BUSINESS_EVENT_TOPIC:business.event.occurred}
+  external:
+    base-url: ${EXTERNAL_API_BASE_URL:http://localhost:8089}
