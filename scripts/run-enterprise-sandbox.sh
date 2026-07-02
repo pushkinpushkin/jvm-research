@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-variant="${1:-hotspot-generic}"
+variant="${1:-hotspot-liberica}"
 
 case "${variant}" in
-  hotspot|hotspot-generic)
-    export JVM_VARIANT="hotspot-generic"
-    export RUNTIME_IMAGE="eclipse-temurin:21-jre"
+  hotspot|hotspot-liberica)
+    export JVM_VARIANT="hotspot-liberica"
+    export RUNTIME_IMAGE="bellsoft/liberica-openjre-alpine:21.0.11-11"
     ;;
   openj9)
     export JVM_VARIANT="openj9"
@@ -18,7 +18,7 @@ case "${variant}" in
     ;;
   *)
     echo "Unknown JVM variant: ${variant}" >&2
-    echo "Usage: $0 [hotspot-generic|openj9|graalvm-jit]" >&2
+    echo "Usage: $0 [hotspot-liberica|openj9|graalvm-jit]" >&2
     exit 1
     ;;
 esac
