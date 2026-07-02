@@ -15,7 +15,7 @@ java {
 }
 
 application {
-    mainClass.set("dev.pushkin.jvmresearch.SandboxApp")
+    mainClass.set("dev.pushkin.jvmresearch.enterprise.EnterpriseSandboxApplication")
 }
 
 springBoot {
