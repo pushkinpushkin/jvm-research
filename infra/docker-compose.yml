@@ -31,6 +31,12 @@ services:
       GIT_SHA: ${GIT_SHA:-unknown}
       CONTAINER_CPU_LIMIT: ${CONTAINER_CPU_LIMIT:-1}
       CONTAINER_MEMORY_LIMIT: ${CONTAINER_MEMORY_LIMIT:-1g}
+      WORK_CPU_REQUEST: ${WORK_CPU_REQUEST:-10m}
+      WORK_CPU_LIMIT: ${WORK_CPU_LIMIT:-1}
+      WORK_MEMORY_REQUEST: ${WORK_MEMORY_REQUEST:-512Mi}
+      WORK_MEMORY_LIMIT: ${WORK_MEMORY_LIMIT:-1Gi}
+      WORK_TIMEZONE: ${WORK_TIMEZONE:-Europe/Moscow}
+      WORK_EXTRA_JAVA_OPTS: ${WORK_EXTRA_JAVA_OPTS:--Dserver.max-http-request-header-size=30000}
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:-}
     volumes:
       - ${RUN_RESULTS_DIR:-../results/local}/app-logs:/app/logs
