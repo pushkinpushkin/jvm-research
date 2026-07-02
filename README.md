@@ -1,6 +1,6 @@
 # JVM Research Sandbox
 
-Песочница для сравнения поведения разных JVM на одинаковом Java-коде: generic HotSpot baseline, OpenJ9 и GraalVM JIT.
+Песочница для сравнения поведения разных JVM на одинаковом Java-коде: HotSpot Liberica baseline, OpenJ9 и GraalVM JIT.
 
 Цель репозитория — быстро получать воспроизводимые замеры, а потом переносить подход на реальные микросервисы.
 
@@ -8,7 +8,7 @@
 
 | Variant | JVM type | Image | Role |
 |---|---|---|---|
-| `hotspot-generic` | HotSpot / Eclipse Temurin | `eclipse-temurin:21-jre` | generic HotSpot baseline |
+| `hotspot-liberica` | HotSpot / BellSoft Liberica | `bellsoft/liberica-openjre-alpine:21.0.11-11` | HotSpot Liberica baseline |
 | `openj9` | Eclipse OpenJ9 / IBM Semeru | `ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy` | эталонный OpenJ9 |
 | `graalvm-jit` | Oracle GraalVM JDK | `container-registry.oracle.com/graalvm/jdk:21` | GraalVM в JVM/JIT режиме |
 
@@ -160,7 +160,7 @@ HTTP -> MongoDB -> WireMock external API -> mapping -> MongoDB -> Kafka -> sched
 Быстрый запуск:
 
 ```bash
-bash scripts/run-enterprise-sandbox.sh hotspot-generic
+bash scripts/run-enterprise-sandbox.sh hotspot-liberica
 bash scripts/run-enterprise-sandbox.sh openj9
 bash scripts/run-enterprise-sandbox.sh graalvm-jit
 ```
@@ -196,7 +196,7 @@ Dockerfile-ы запускают уже собранный runtime distribution 
 Потом собрать runtime-образы для JMH/runtime слоя:
 
 ```bash
-docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-generic .
+docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-liberica .
 docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
 docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
 ```
@@ -204,7 +204,7 @@ docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
 Запуск Spring Boot-приложения:
 
 ```bash
-docker run --rm jvm-research:hotspot-generic
+docker run --rm jvm-research:hotspot-liberica
 docker run --rm jvm-research:openj9
 docker run --rm jvm-research:graalvm-jit
 ```
@@ -212,7 +212,7 @@ docker run --rm jvm-research:graalvm-jit
 Запуск JMH внутри runtime-контейнера:
 
 ```bash
-docker run --rm -v "$PWD/results:/results" jvm-research:hotspot-generic java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/hotspot-generic-jmh.json
+docker run --rm -v "$PWD/results:/results" jvm-research:hotspot-liberica java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/hotspot-liberica-jmh.json
 docker run --rm -v "$PWD/results:/results" jvm-research:openj9 java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/openj9-jmh.json
 docker run --rm -v "$PWD/results:/results" jvm-research:graalvm-jit java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/graalvm-jit-jmh.json
 ```
@@ -220,7 +220,7 @@ docker run --rm -v "$PWD/results:/results" jvm-research:graalvm-jit java -jar /o
 Для enterprise sandbox используется корневой `Dockerfile` с runtime image как build arg:
 
 ```bash
-docker build --build-arg RUNTIME_IMAGE=eclipse-temurin:21-jre -t jvm-research-sandbox:hotspot-generic .
+docker build --build-arg RUNTIME_IMAGE=bellsoft/liberica-openjre-alpine:21.0.11-11 -t jvm-research-sandbox:hotspot-liberica .
 docker build --build-arg RUNTIME_IMAGE=ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy -t jvm-research-sandbox:openj9 .
 docker build --build-arg RUNTIME_IMAGE=container-registry.oracle.com/graalvm/jdk:21 -t jvm-research-sandbox:graalvm-jit .
 ```
