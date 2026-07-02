@@ -10,9 +10,9 @@ export const options = {
   scenarios: {
     steady_enterprise_flow: {
       executor: 'constant-arrival-rate',
-      rate: Number(__ENV.RATE || 20),
+      rate: Number(__ENV.RATE || 10),
       timeUnit: '1s',
-      duration: __ENV.DURATION || '5m',
+      duration: __ENV.DURATION || '10m',
       preAllocatedVUs: Number(__ENV.PREALLOCATED_VUS || 50),
       maxVUs: Number(__ENV.MAX_VUS || 200),
     },
