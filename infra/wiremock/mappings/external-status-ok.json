@@ -1,0 +1,22 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/external/process/status/[^/]+",
+    "queryParameters": {
+      "mode": {
+        "equalTo": "ok"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "requestId": "synthetic-request",
+      "status": "DONE",
+      "failMessage": ""
+    }
+  }
+}
