@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=eclipse-temurin:21-jre
+ARG BASE_IMAGE=bellsoft/liberica-openjre-alpine:21.0.11-11
 FROM ${BASE_IMAGE}
 
 WORKDIR /opt/jvm-research
