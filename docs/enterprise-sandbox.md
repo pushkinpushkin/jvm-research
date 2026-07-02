@@ -18,6 +18,7 @@ dev.pushkin.jvmresearch.enterprise.EnterpriseSandboxApplication
 k6
   -> Spring Boot sandbox-service
       -> synthetic runtime endpoint
+      -> run info endpoint
       -> MongoDB
       -> WireMock external API
       -> Kafka producer
@@ -41,6 +42,25 @@ POST /synthetic/runtime?iterations=20&payloadSize=100000
 - heap used
 - GC count
 - p50 / p95 / max
+```
+
+## Run info endpoint
+
+```text
+GET /run-info
+```
+
+Этот endpoint нужен, чтобы проверять не только переданные env-переменные, но и то, что JVM реально увидела на старте:
+
+```text
+- runId / runProfile / jvmVariant / jvmProfile
+- gitSha
+- java version/vendor
+- VM name/version/vendor
+- ManagementFactory RuntimeMXBean inputArguments
+- max heap / total heap / free heap
+- available processors
+- work-like Helm reference
 ```
 
 ## Основной HTTP flow
@@ -107,6 +127,27 @@ sandbox:
     kafka-duplicate-percent: 5
 ```
 
+## Work-like pod profile
+
+Профили `profiles/work-*.env` приближают локальный запуск к рабочему Helm values:
+
+```text
+container cpu limit: 1
+container memory limit: 1Gi
+java heap: 512Mi
+timezone: Europe/Moscow
+port: 8080
+extraJavaOpts: -Dserver.max-http-request-header-size=30000
+```
+
+Локальный запуск моделирует runtime-ограничения через Docker Compose:
+
+```text
+cpus: ${CONTAINER_CPU_LIMIT:-1}
+mem_limit: ${CONTAINER_MEMORY_LIMIT:-1g}
+JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:-}
+```
+
 ## Deduplication
 
 `EnterpriseEventPublisher` может отправить один и тот же `BusinessEvent` дважды, если `kafka-duplicate-percent` попал в профиль нагрузки. Consumer-слой защищается двумя уровнями:
@@ -145,6 +186,14 @@ docker compose -f infra/docker-compose.yml pull mongo kafka wiremock
 
 ```bash
 docker compose -f infra/docker-compose.yml up --build
+```
+
+Полный запуск эксперимента с сохранением результатов:
+
+```bash
+bash scripts/run-experiment.sh profiles/work-hotspot-baseline.env
+bash scripts/run-experiment.sh profiles/work-openj9-baseline.env
+bash scripts/run-experiment.sh profiles/work-graalvm-baseline.env
 ```
 
 Нагрузка:
