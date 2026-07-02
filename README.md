@@ -132,6 +132,7 @@ results/<RUN_ID>/
   prometheus-after.txt
   app.log
   docker-compose-ps.txt
+  docker-stats.txt
   app-logs/gc.log
   jcmd-vm-command-line.txt
   jcmd-vm-flags.txt
