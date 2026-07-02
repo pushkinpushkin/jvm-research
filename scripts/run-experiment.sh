@@ -81,7 +81,7 @@ docker compose -f infra/docker-compose.yml up --build -d
 
 healthy=false
 for _ in $(seq 1 120); do
-  if curl -fsS "${BASE_URL}/actuator/health" > "$RUN_RESULTS_DIR/health.json"; then
+  if curl -fsS "${BASE_URL}/actuator/health" > "$RUN_RESULTS_DIR/health.json" 2>/dev/null; then
     healthy=true
     break
   fi
@@ -116,9 +116,9 @@ if [[ -n "$container_id" ]]; then
 fi
 
 if docker compose -f infra/docker-compose.yml exec -T sandbox-service sh -lc 'command -v jcmd >/dev/null 2>&1'; then
-  docker compose -f infra/docker-compose.yml exec -T sandbox-service jcmd 1 VM.command_line > "$RUN_RESULTS_DIR/jcmd-vm-command-line.txt" || true
-  docker compose -f infra/docker-compose.yml exec -T sandbox-service jcmd 1 VM.flags > "$RUN_RESULTS_DIR/jcmd-vm-flags.txt" || true
-  docker compose -f infra/docker-compose.yml exec -T sandbox-service jcmd 1 VM.system_properties > "$RUN_RESULTS_DIR/jcmd-vm-system-properties.txt" || true
+  docker compose -f infra/docker-compose.yml exec -T sandbox-service sh -lc 'JAVA_TOOL_OPTIONS= jcmd 1 VM.command_line' > "$RUN_RESULTS_DIR/jcmd-vm-command-line.txt" || true
+  docker compose -f infra/docker-compose.yml exec -T sandbox-service sh -lc 'JAVA_TOOL_OPTIONS= jcmd 1 VM.flags' > "$RUN_RESULTS_DIR/jcmd-vm-flags.txt" || true
+  docker compose -f infra/docker-compose.yml exec -T sandbox-service sh -lc 'JAVA_TOOL_OPTIONS= jcmd 1 VM.system_properties' > "$RUN_RESULTS_DIR/jcmd-vm-system-properties.txt" || true
 else
   echo "jcmd is not available in runtime image" > "$RUN_RESULTS_DIR/jcmd-not-available.txt"
 fi
