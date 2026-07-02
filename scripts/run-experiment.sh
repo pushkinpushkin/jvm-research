@@ -79,12 +79,20 @@ cleanup
 
 docker compose -f infra/docker-compose.yml up --build -d
 
+healthy=false
 for _ in $(seq 1 120); do
   if curl -fsS "${BASE_URL}/actuator/health" > "$RUN_RESULTS_DIR/health.json"; then
+    healthy=true
     break
   fi
   sleep 1
 done
+
+if [[ "$healthy" != "true" ]]; then
+  docker compose -f infra/docker-compose.yml logs --no-color sandbox-service > "$RUN_RESULTS_DIR/app.log" || true
+  echo "Application health check failed" >&2
+  exit 1
+fi
 
 curl -fsS "${BASE_URL}/run-info" | tee "$RUN_RESULTS_DIR/run-info.json" >/dev/null
 curl -fsS "${BASE_URL}/actuator/prometheus" > "$RUN_RESULTS_DIR/prometheus-before.txt"
