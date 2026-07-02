@@ -4,7 +4,7 @@
 
 В исследовании сравниваем не абстрактные JVM, а конкретные runtime-варианты, которые можно воспроизвести в публичном окружении:
 
-1. generic HotSpot baseline;
+1. BellSoft Liberica HotSpot baseline;
 2. альтернативная JVM с другим memory/runtime профилем;
 3. GraalVM JIT как популярный эталон для сравнений.
 
@@ -12,15 +12,15 @@
 
 | Variant | JVM type | Image | Role |
 |---|---|---|---|
-| `hotspot-generic` | HotSpot / Eclipse Temurin | `eclipse-temurin:21-jre` | generic HotSpot baseline |
+| `hotspot-liberica` | HotSpot / BellSoft Liberica | `bellsoft/liberica-openjre-alpine:21.0.11-11` | HotSpot baseline |
 | `openj9` | Eclipse OpenJ9 / IBM Semeru | `ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy` | эталонный OpenJ9 runtime для сравнения memory footprint / warmup |
 | `graalvm-jit` | Oracle GraalVM JDK | `container-registry.oracle.com/graalvm/jdk:21` | GraalVM в JVM/JIT режиме, без Native Image |
 
 ## Почему так
 
-### HotSpot / Eclipse Temurin
+### HotSpot / BellSoft Liberica
 
-Это публичный generic baseline для сравнения. Его задача не победить в бенчмарках, а дать стабильную точку отсчета для HotSpot на Java 21.
+Это публичный BellSoft Liberica baseline для сравнения. Он сохраняет смысл HotSpot baseline без привязки к приватным registry.
 
 ### OpenJ9 / IBM Semeru
 
@@ -65,7 +65,7 @@ GraalVM 21 vs GraalVM 25
 ## Команды сборки
 
 ```bash
-docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-generic .
+docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-liberica .
 docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
 docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
 ```
@@ -85,6 +85,6 @@ docker build \
 
 | Variant | Java version | JVM name | OS base | Startup | Warmup | Throughput | RSS | Heap | GC |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|
-| hotspot-generic | TBD | TBD | Debian/Ubuntu based | TBD | TBD | TBD | TBD | TBD | TBD |
+| hotspot-liberica | TBD | TBD | Alpine | TBD | TBD | TBD | TBD | TBD | TBD |
 | openj9 | TBD | TBD | Ubuntu Jammy | TBD | TBD | TBD | TBD | TBD | TBD |
 | graalvm-jit | TBD | TBD | Oracle Linux based | TBD | TBD | TBD | TBD | TBD | TBD |
