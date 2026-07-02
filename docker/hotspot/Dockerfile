@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=registry.example.invalid/bellsoft/liberica-openjre-alpine:21.0.11-11
+ARG BASE_IMAGE=eclipse-temurin:21-jre
 FROM ${BASE_IMAGE}
 
 WORKDIR /opt/jvm-research
