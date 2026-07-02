@@ -102,6 +102,11 @@ curl -fsS "${BASE_URL}/actuator/prometheus" > "$RUN_RESULTS_DIR/prometheus-after
 docker compose -f infra/docker-compose.yml logs --no-color sandbox-service > "$RUN_RESULTS_DIR/app.log"
 docker compose -f infra/docker-compose.yml ps > "$RUN_RESULTS_DIR/docker-compose-ps.txt"
 
+container_id="$(docker compose -f infra/docker-compose.yml ps -q sandbox-service || true)"
+if [[ -n "$container_id" ]]; then
+  docker stats --no-stream "$container_id" > "$RUN_RESULTS_DIR/docker-stats.txt" || true
+fi
+
 if docker compose -f infra/docker-compose.yml exec -T sandbox-service sh -lc 'command -v jcmd >/dev/null 2>&1'; then
   docker compose -f infra/docker-compose.yml exec -T sandbox-service jcmd 1 VM.command_line > "$RUN_RESULTS_DIR/jcmd-vm-command-line.txt" || true
   docker compose -f infra/docker-compose.yml exec -T sandbox-service jcmd 1 VM.flags > "$RUN_RESULTS_DIR/jcmd-vm-flags.txt" || true
