@@ -21,6 +21,7 @@ k6
       -> MongoDB
       -> WireMock external API
       -> Kafka producer
+      -> Kafka consumers
       -> schedulers
       -> actuator/prometheus metrics
 ```
@@ -58,6 +59,9 @@ POST /orders/{orderId}/process
 5. Обновляет вложенный fnsProcess.
 6. Сохраняет документ в MongoDB.
 7. Публикует ORDER_STATUS_CHANGED в Kafka.
+8. Kafka listener читает событие и пишет историю обработки.
+9. При COMPLETED публикуется ACCOUNT_FULLY_OPENED.
+10. Business event listener делает dedup и сохраняет eventId в OrderDocument.
 ```
 
 ## Фоновые процессы
@@ -72,6 +76,17 @@ StatusPollingScheduler
 RetryOrdersScheduler
   -> ищет FAILED
   -> возвращает часть заявок в NEW для повторной обработки
+
+OrderStatusChangedListener
+  -> читает order.status.changed
+  -> отсекает дубликаты по eventId
+  -> пишет техническую историю обработки
+  -> для COMPLETED публикует ACCOUNT_FULLY_OPENED
+
+BusinessEventListener
+  -> читает business.event.occurred
+  -> отсекает дубликаты по eventId
+  -> сохраняет eventId в processedBusinessEvents внутри OrderDocument
 ```
 
 ## Workload profile
@@ -91,6 +106,20 @@ sandbox:
     mongo-conflict-percent: 2
     kafka-duplicate-percent: 5
 ```
+
+## Deduplication
+
+`EnterpriseEventPublisher` может отправить один и тот же `BusinessEvent` дважды, если `kafka-duplicate-percent` попал в профиль нагрузки. Consumer-слой защищается двумя уровнями:
+
+```text
+1. InMemoryBusinessEventDeduplicationService
+   -> быстрый process-local guard по eventId.
+
+2. OrderDocument.processedBusinessEvents
+   -> документ заявки хранит уже обработанные business event id.
+```
+
+Это не production-grade distributed dedup, но для JVM-песочницы достаточно: появляются Kafka deserialization, consumer threads, повторная обработка, проверка идемпотентности и дополнительная запись в MongoDB.
 
 ## Запуск
 
@@ -126,4 +155,6 @@ GET /actuator/prometheus
 - scheduler batch duration
 - external API duration
 - Mongo read/update duration
+- Kafka consumer processing rate
+- duplicate event count in logs
 ```
