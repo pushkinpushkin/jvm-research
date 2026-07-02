@@ -20,25 +20,46 @@
 .
 ├── build.gradle.kts
 ├── settings.gradle.kts
+├── Dockerfile
 ├── docker/
 │   ├── hotspot/Dockerfile
 │   ├── openj9/Dockerfile
 │   └── graalvm/Dockerfile
+├── infra/
+│   ├── docker-compose.yml
+│   └── wiremock/mappings/
+├── load/k6/enterprise-flow.js
 ├── scripts/
 │   ├── run-benchmarks.sh
 │   ├── run-app.sh
-│   └── collect-runtime-metrics.sh
+│   ├── collect-runtime-metrics.sh
+│   ├── run-enterprise-sandbox.sh
+│   └── run-load.sh
 ├── src/main/java/dev/pushkin/jvmresearch/SandboxApp.java
+├── src/main/java/dev/pushkin/jvmresearch/enterprise/
 ├── src/jmh/java/dev/pushkin/jvmresearch/AllocationBenchmark.java
 ├── src/jmh/java/dev/pushkin/jvmresearch/StringProcessingBenchmark.java
 └── docs/
+    ├── enterprise-sandbox.md
     ├── experiment-plan.md
     ├── jvm-matrix.md
     ├── local-runbook.md
     └── metrics.md
 ```
 
-## Быстрый старт
+## Два уровня исследования
+
+### 1. JMH / synthetic JVM layer
+
+Микробенчмарки и простой `SandboxApp` нужны, чтобы отдельно смотреть:
+
+```text
+- allocations;
+- string processing;
+- startup;
+- warmup;
+- heap/GC на простом CPU + allocation сценарии.
+```
 
 Если Gradle Wrapper ещё не сгенерирован локально:
 
@@ -54,6 +75,41 @@ chmod +x gradlew scripts/*.sh
 ./gradlew jmh
 ```
 
+### 2. Enterprise sandbox layer
+
+Spring Boot-приложение имитирует типовой микросервисный flow:
+
+```text
+HTTP -> MongoDB -> WireMock external API -> mapping -> MongoDB -> Kafka -> schedulers
+```
+
+Подробнее: [docs/enterprise-sandbox.md](docs/enterprise-sandbox.md).
+
+Быстрый запуск:
+
+```bash
+bash scripts/run-enterprise-sandbox.sh hotspot-work
+bash scripts/run-enterprise-sandbox.sh openj9
+bash scripts/run-enterprise-sandbox.sh graalvm-jit
+```
+
+Сервис поднимается вместе с MongoDB, Kafka и WireMock через `infra/docker-compose.yml`.
+
+Проверка API:
+
+```bash
+curl -X POST 'http://localhost:8080/orders/generate?count=10000'
+curl -X POST 'http://localhost:8080/orders/order-1/process'
+curl 'http://localhost:8080/orders/order-1'
+curl 'http://localhost:8080/actuator/prometheus'
+```
+
+Запуск нагрузки через k6:
+
+```bash
+RATE=20 DURATION=5m ORDER_POOL=10000 bash scripts/run-load.sh
+```
+
 ## Docker-сборка JVM-вариантов
 
 Dockerfile-ы запускают уже собранный runtime distribution и JMH jar. Это нужно, потому что рабочий HotSpot baseline использует OpenJRE-образ, а не JDK-образ.
@@ -64,7 +120,7 @@ Dockerfile-ы запускают уже собранный runtime distribution 
 ./gradlew clean test installDist jmhJar
 ```
 
-Потом собрать runtime-образы:
+Потом собрать runtime-образы для JMH/simple runtime слоя:
 
 ```bash
 docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-work .
@@ -88,13 +144,21 @@ docker run --rm -v "$PWD/results:/results" jvm-research:openj9 java -jar /opt/jv
 docker run --rm -v "$PWD/results:/results" jvm-research:graalvm-jit java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/graalvm-jit-jmh.json
 ```
 
+Для enterprise sandbox используется корневой `Dockerfile` с runtime image как build arg:
+
+```bash
+docker build --build-arg RUNTIME_IMAGE=registry.example.invalid/bellsoft/liberica-openjre-alpine:21.0.11-11 -t jvm-research-sandbox:hotspot-work .
+docker build --build-arg RUNTIME_IMAGE=ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy -t jvm-research-sandbox:openj9 .
+docker build --build-arg RUNTIME_IMAGE=container-registry.oracle.com/graalvm/jdk:21 -t jvm-research-sandbox:graalvm-jit .
+```
+
 ## Базовая идея исследования
 
 1. Зафиксировать одинаковый код, входные данные и лимиты контейнера.
 2. Прогнать синтетические JMH-бенчмарки.
-3. Прогнать простое sandbox-приложение и снять startup/runtime метрики.
-4. Перенести методику на один реальный микросервис.
-5. Сравнить throughput, memory footprint, GC, warmup, startup и стабильность p95/p99.
+3. Прогнать enterprise sandbox с одинаковым workload profile.
+4. Снять startup/runtime метрики, GC, heap, RSS, p95/p99, throughput и error rate.
+5. Повторить несколько прогонов и сравнивать не только среднее время, но и стабильность хвостов.
 
 ## Важно
 
