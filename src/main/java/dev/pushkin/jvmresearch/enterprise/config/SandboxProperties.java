@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "sandbox")
 public record SandboxProperties(
         Flow flow,
-        Chaos chaos,
+        Profile profile,
         Scheduler scheduler,
         Kafka kafka,
         External external
@@ -18,11 +18,11 @@ public record SandboxProperties(
     ) {
     }
 
-    public record Chaos(
+    public record Profile(
             boolean enabled,
             int externalApiLongDelayPercent,
             int externalApiErrorPercent,
-            int externalApiMalformedPercent,
+            int externalApiInvalidPercent,
             int externalApiSlowPercent,
             int mongoConflictPercent,
             int kafkaDuplicatePercent
