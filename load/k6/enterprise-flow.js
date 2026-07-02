@@ -5,6 +5,8 @@ const baseUrl = __ENV.BASE_URL || 'http://localhost:8080';
 const orderPool = Number(__ENV.ORDER_POOL || 10000);
 
 export const options = {
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)', 'p(99.9)'],
+
   scenarios: {
     steady_enterprise_flow: {
       executor: 'constant-arrival-rate',
