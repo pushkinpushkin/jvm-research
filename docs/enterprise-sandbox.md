@@ -2,16 +2,44 @@
 
 Этот слой нужен не вместо JMH, а рядом с ним. JMH показывает микроповедение JVM, а enterprise sandbox показывает поведение JVM на смеси HTTP, MongoDB, Kafka, WireMock, scheduler'ов, JSON-маппинга и управляемых ошибок.
 
+## Entry point
+
+Основное приложение одно:
+
+```text
+dev.pushkin.jvmresearch.enterprise.EnterpriseSandboxApplication
+```
+
+Старый standalone `SandboxApp` удален. Быстрый CPU/allocation smoke теперь живет внутри Spring Boot как HTTP endpoint.
+
 ## Компоненты
 
 ```text
 k6
   -> Spring Boot sandbox-service
+      -> synthetic runtime endpoint
       -> MongoDB
       -> WireMock external API
       -> Kafka producer
       -> schedulers
       -> actuator/prometheus metrics
+```
+
+## Synthetic runtime endpoint
+
+```text
+POST /synthetic/runtime?iterations=20&payloadSize=100000
+```
+
+Этот endpoint нужен для быстрого smoke-прогона JVM без основной enterprise-нагрузки. Он выполняет:
+
+```text
+- CPU work
+- allocation work
+- latency samples
+- heap used
+- GC count
+- p50 / p95 / max
 ```
 
 ## Основной HTTP flow
