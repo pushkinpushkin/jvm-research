@@ -1,80 +1,107 @@
 # Local runbook
 
-## 1. Первый запуск
-
-```bash
-gradle wrapper --gradle-version 8.14.3
-chmod +x gradlew scripts/*.sh
-./gradlew test
-```
-
-## 2. Запуск JMH локально
-
-```bash
-JVM_NAME=local ./scripts/run-benchmarks.sh
-```
-
-Результат появится в:
+## Требования
 
 ```text
-results/local/jmh-results.json
-results/local/java-version.txt
+Java 21
+Docker Desktop / Docker Engine with Compose v2
+curl
+python3
+k6 optional
 ```
 
-## 3. Запуск sandbox-приложения локально
+`k6` не обязателен: если его нет, `scripts/run-experiment.sh` сохранит synthetic smoke и пропустит enterprise load.
+
+## Быстрая проверка проекта
 
 ```bash
-SANDBOX_ITERATIONS=20 \
-SANDBOX_PAYLOAD_SIZE=100000 \
-SANDBOX_SLEEP_MILLIS=250 \
-JVM_NAME=local \
-./scripts/run-app.sh
+./gradlew clean test bootJar
 ```
 
-## 4. Сбор runtime-метрик вручную
+## Полный JVM experiment run
 
-В одном терминале:
+HotSpot baseline на BellSoft Liberica:
 
 ```bash
-JVM_NAME=local ./scripts/run-app.sh
+bash scripts/run-experiment.sh profiles/work-hotspot-baseline.env
 ```
 
-Во втором терминале найти PID Java-процесса и запустить:
+OpenJ9:
 
 ```bash
-SAMPLES=60 INTERVAL_SECONDS=1 OUT=results/local/runtime-metrics.csv ./scripts/collect-runtime-metrics.sh <pid>
+bash scripts/run-experiment.sh profiles/work-openj9-baseline.env
 ```
 
-## 5. Docker runtime images
-
-Dockerfile-ы запускают уже собранный application distribution и JMH jar. Это важно, потому что рабочий HotSpot baseline — `openjre`, а не JDK. Такой контейнер должен запускать приложение, а не собирать Gradle-проект внутри себя.
-
-Сначала собрать артефакты локально или в CI:
+GraalVM JIT:
 
 ```bash
-./gradlew clean test installDist jmhJar
+bash scripts/run-experiment.sh profiles/work-graalvm-baseline.env
 ```
 
-После этого собрать образы:
+С переопределением нагрузки:
 
 ```bash
-docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-work .
-docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
-docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
+RATE=30 DURATION=10m ORDER_POOL=20000 bash scripts/run-experiment.sh profiles/work-hotspot-baseline.env
 ```
 
-Запуск sandbox-приложения:
+## Где лежат результаты
+
+```text
+results/<RUN_ID>/
+  metadata.json
+  run-info.json
+  health.json
+  synthetic-runtime.json
+  k6-summary.json
+  k6.log
+  prometheus-before.txt
+  prometheus-after.txt
+  app.log
+  docker-compose-ps.txt
+  docker-stats.txt
+  app-logs/gc.log
+  jcmd-vm-command-line.txt
+  jcmd-vm-flags.txt
+  jcmd-vm-system-properties.txt
+```
+
+## Что проверить после запуска
 
 ```bash
-docker run --rm jvm-research:hotspot-work
-docker run --rm jvm-research:openj9
-docker run --rm jvm-research:graalvm-jit
+cat results/<RUN_ID>/metadata.json
+cat results/<RUN_ID>/run-info.json
+cat results/<RUN_ID>/docker-stats.txt
+cat results/<RUN_ID>/synthetic-runtime.json
 ```
 
-Запуск JMH jar внутри runtime-контейнера:
+В `run-info.json` должны совпадать:
+
+```text
+jvmVariant
+jvmProfile
+runtime inputArguments
+maxHeapMb около 512
+availableProcessors около 1
+```
+
+## Ручной запуск sandbox
 
 ```bash
-docker run --rm -v "$PWD/results:/results" jvm-research:hotspot-work java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/hotspot-work-jmh.json
-docker run --rm -v "$PWD/results:/results" jvm-research:openj9 java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/openj9-jmh.json
-docker run --rm -v "$PWD/results:/results" jvm-research:graalvm-jit java -jar /opt/jvm-research/jmh-benchmarks.jar -rf json -rff /results/graalvm-jit-jmh.json
+bash scripts/run-enterprise-sandbox.sh hotspot-liberica
+bash scripts/run-enterprise-sandbox.sh openj9
+bash scripts/run-enterprise-sandbox.sh graalvm-jit
 ```
+
+Проверка API:
+
+```bash
+curl http://localhost:8080/actuator/health
+curl http://localhost:8080/run-info
+curl -X POST 'http://localhost:8080/synthetic/runtime?iterations=20&payloadSize=100000'
+curl -X POST 'http://localhost:8080/orders/generate?count=1000'
+curl -X POST 'http://localhost:8080/orders/order-1/process'
+```
+
+## Важное ограничение
+
+Локальный запуск не идентичен Kubernetes. Он воспроизводимо моделирует один pod: CPU limit, memory limit, heap, timezone, port, JVM options и runtime image. На macOS Docker работает через VM, поэтому абсолютные цифры RSS/CPU могут отличаться от Linux/Kubernetes node.
