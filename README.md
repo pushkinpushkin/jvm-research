@@ -115,6 +115,8 @@ SCENARIO=load RATE=10 DURATION=30m bash scripts/run-experiment.sh profiles/work-
 SCENARIO=load RATE=25 DURATION=30m bash scripts/run-experiment.sh profiles/work-hotspot-fixed.env
 
 bash scripts/compare-benchmark-root.sh results
+bash scripts/compare-benchmark-root.sh results --html results/report.html
+open results/report.html # macOS: интерактивные графики, без сервера
 ```
 
 Подставьте соответствующий профиль OpenJ9/GraalVM JIT/native для той же нагрузки.

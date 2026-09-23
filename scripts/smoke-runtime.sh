@@ -27,3 +27,4 @@ for metadata in root.rglob('metadata.json'):
 print('Runtime smoke artifacts and integration evidence verified')
 PY
 bash scripts/compare-benchmark-root.sh "$root"
+bash scripts/compare-benchmark-root.sh "$root" --html "$root/report.html"

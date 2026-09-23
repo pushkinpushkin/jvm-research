@@ -120,6 +120,8 @@ SIGKILL и авария хоста не позволяют выполнить cl
 bash scripts/compare-benchmark-root.sh results/benchmark/r10-30m
 bash scripts/compare-benchmark-root.sh results/idle/30m
 bash scripts/compare-benchmark-root.sh results --csv > comparison.csv
+bash scripts/compare-benchmark-root.sh results/verification --html results/verification/report.html
+open results/verification/report.html # macOS
 python3 -m unittest discover -s scripts/tests -v
 ```
 
@@ -127,6 +129,14 @@ python3 -m unittest discover -s scripts/tests -v
 Пропуски отображаются как `n/a`, в CSV — пустая ячейка. Старый k6 summary поддерживается.
 Скрипт не усредняет разные профили и не усредняет перцентили разных запусков.
 Проверяйте status, scenario, memory_profile, CPU, rate, duration и config перед выводами.
+
+HTML-отчёт работает локально без сервера и строится из сохранённых CSV и metadata:
+линии памяти и CPU, сравнение пиков памяти, startup и HTTP p95. Выбор сценария
+разделяет несовместимые условия; отдельные запуски можно скрывать в легенде.
+После одного smoke видны его idle и load; сравнение runtime появится после
+прогонов остальных профилей. Поминутный HTTP p95 требует `K6_TIME_SERIES=true`
+при запуске эксперимента; из одного summary временной ряд восстановить нельзя.
+Память — Docker working set estimate, а не heap или RSS.
 
 ## Ручной sandbox и ограничение измерений
 
