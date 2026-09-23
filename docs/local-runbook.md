@@ -1,107 +1,146 @@
 # Local runbook
 
-## Требования
+## Требования и сборка
+
+Java 21, Bash, Python 3.9+, curl, Docker Engine/Desktop + Compose v2.
+Для `load` и `low-load` обязателен локальный k6. Без него запуск завершается ошибкой.
+`idle` k6 не использует. Порты 8080, 8089, 9092, 27017 должны быть свободны.
+
+```bash
+./gradlew test bootJar
+# Локальная AOT-сборка: JAVA_HOME указывает на GraalVM JDK 21 с native-image;
+# также нужны C toolchain и системные библиотеки по инструкции GraalVM.
+./gradlew nativeCompile
+# Результат: build/native/nativeCompile/jvm-research
+
+# Альтернатива: весь native toolchain внутри отдельного builder-контейнера.
+docker build -f Dockerfile.native -t jvm-research-sandbox:graalvm-native .
+docker build -t jvm-research-sandbox:hotspot-liberica .
+```
+
+Native build требует существенно больше ресурсов, чем runtime с лимитом 1 GiB.
+Лимиты `2 CPU / 1g` относятся к измеряемому контейнеру, а не сборщику.
+Не запускайте сборку одновременно с измерением другого runtime.
+
+## Smoke всех четырёх runtime
+
+```bash
+for profile in work-hotspot-fixed work-openj9-fixed work-graalvm-fixed work-graalvm-native; do
+  SCENARIO=load RATE=1 DURATION=1m ORDER_POOL=100 SEED_ORDERS=100 \
+    RESULTS_ROOT=results/smoke \
+    bash scripts/run-experiment.sh "profiles/${profile}.env" || break
+done
+```
+
+Каждый runner собирает образ, поднимает MongoDB, Kafka и WireMock, ждёт
+`/actuator/health/readiness` со статусом UP (readinessState + Mongo), читает `/run-info`,
+выполняет workload, собирает диагностику и удаляет только свой временный Compose project.
+Readiness не заменяет проверку Kafka/внешнего API: для этого нужен enterprise load и просмотр логов.
+Для проверки бизнес-цепочки ищите в `app.log` сообщения `External FNS request finished`,
+`Kafka event published` и `Business event occurred` / `Order status changed`.
+Ошибки Native reflection/deserialization требуют исправления до длинных замеров.
+
+## Основная матрица: 2 CPU, 1 GiB
+
+Нагрузочный fixed-heap baseline (три JVM) и отдельный native вариант:
+
+```bash
+SCENARIO=load RATE=10 DURATION=30m bash scripts/run-experiment.sh profiles/work-hotspot-fixed.env
+SCENARIO=load RATE=10 DURATION=30m bash scripts/run-experiment.sh profiles/work-openj9-fixed.env
+SCENARIO=load RATE=10 DURATION=30m bash scripts/run-experiment.sh profiles/work-graalvm-fixed.env
+SCENARIO=load RATE=10 DURATION=30m bash scripts/run-experiment.sh profiles/work-graalvm-native.env
+```
+
+Memory-oriented матрица: поменяйте `fixed` на `elastic` для JVM.
+Native остаётся в явно обозначенном режиме `native-default`, без JVM options.
+Для выбранного профиля:
+
+```bash
+SCENARIO=idle DURATION=30m RESULTS_ROOT=results/idle/30m \
+  bash scripts/run-experiment.sh profiles/work-hotspot-elastic.env
+SCENARIO=low-load RATE=1 DURATION=30m RESULTS_ROOT=results/low-load/r1-30m \
+  bash scripts/run-experiment.sh profiles/work-hotspot-elastic.env
+SCENARIO=load RATE=10 DURATION=30m RESULTS_ROOT=results/benchmark/r10-30m \
+  bash scripts/run-experiment.sh profiles/work-hotspot-elastic.env
+SCENARIO=load RATE=25 DURATION=30m RESULTS_ROOT=results/benchmark/r25-30m \
+  bash scripts/run-experiment.sh profiles/work-hotspot-elastic.env
+```
+
+Те же команды применяются к `work-openj9-elastic`, `work-graalvm-elastic` и
+`work-graalvm-native`. Повторить минимум три круга, меняя порядок runtime.
+Старые `work-*-baseline.env` сохранены без изменений: **1 CPU**, Xms=Xmx=512m.
+Для исторического workload явно задавайте старые RATE/DURATION/ORDER_POOL и
+`SYNTHETIC_WARMUP=true`: новый runner по умолчанию не вызывает synthetic endpoint.
+Старые результаты не объединяются с новыми 2 CPU прогонами.
+
+## Параметры и результаты
+
+Экспортированные переменные командной строки имеют приоритет над профилем.
+По умолчанию: SCENARIO=load, RATE=10 (low-load: 1, idle: 0), DURATION=30m,
+INTERVAL_SECONDS=5, ORDER_POOL=10000, SEED_ORDERS=ORDER_POOL.
+`DURATION=1m` / `3m` остаются доступны. Формат `1m30s` тоже поддерживается.
+`SEED_ORDERS < ORDER_POOL` запрещён. Подготовка/seed k6 идут сверх DURATION.
+
+- `RUN_ID` автоматически уникален; существующую директорию перезаписать нельзя.
+- `RESULTS_ROOT` принимает относительный или абсолютный путь.
+- `INTERVAL_SECONDS=5`: период между началами измерений; Docker stats сам занимает время.
+- `COLLECT_PROMETHEUS=false`: отключить периодические scrapes во всей сравниваемой серии.
+- `K6_TIME_SERIES=true`: сохранить исходную временную серию k6 для анализа latency/warmup;
+  файл может быть большим. Используйте одинаковый режим для всех runtime.
+- `SYNTHETIC_WARMUP=true`: только явно обозначенный отдельный эксперимент; запрещён в idle.
+- `HEALTH_TIMEOUT_SECONDS=180`: время ожидания readiness.
+- `APP_PORT`: внешний порт приложения. Остальные порты инфраструктуры фиксированы;
+  запускайте эксперименты последовательно.
+
+`results/<scenario>/<duration>/<run>/` (или RESULTS_ROOT/RUN_ID) содержит:
 
 ```text
-Java 21
-Docker Desktop / Docker Engine with Compose v2
-curl
-python3
-k6 optional
+metadata.json                 # настройки, mode, profile, startup, status, exitCode, git
+profile.env, source.diff       # исходный профиль и tracked diff, если checkout был dirty
+compose-config.yml            # итоговая конфигурация, включая реальные env
+container-inspect.json        # image ID, StartedAt, фактические runtime limits
+build.log, docker-version.txt, docker-info.txt
+health.json, run-info.json
+runtime-metrics.csv, collector.log
+prometheus/*.prom, prometheus-before.txt, prometheus-after.txt
+k6-summary.json, k6.log        # отсутствуют в idle
+k6-timeseries.json            # только K6_TIME_SERIES=true
+app.log, compose.log, app-logs/gc.log
+cleanup.log, docker-compose-ps.txt, docker-stats.txt
 ```
 
-`k6` не обязателен: если его нет, `scripts/run-experiment.sh` сохранит synthetic smoke и пропустит enterprise load.
+При ошибке run получает `status=failed` и ненулевой exitCode. k6 threshold failure не
+превращается в успешный эксперимент. Collector и workload останавливаются при EXIT/INT/TERM;
+SIGKILL и авария хоста не позволяют выполнить cleanup. Данные старых Compose projects
+и исторические результаты не удаляются. Новые экспериментальные Mongo volumes одноразовые.
 
-## Быстрая проверка проекта
+## Сравнение
 
 ```bash
-./gradlew clean test bootJar
+bash scripts/compare-benchmark-root.sh results/benchmark/r10-30m
+bash scripts/compare-benchmark-root.sh results/idle/30m
+bash scripts/compare-benchmark-root.sh results --csv > comparison.csv
+python3 -m unittest discover -s scripts/tests -v
 ```
 
-## Полный JVM experiment run
+Таблица содержит **одну строку на run**, включая все k6-перцентили и memory summary.
+Пропуски отображаются как `n/a`, в CSV — пустая ячейка. Старый k6 summary поддерживается.
+Скрипт не усредняет разные профили и не усредняет перцентили разных запусков.
+Проверяйте status, scenario, memory_profile, CPU, rate, duration и config перед выводами.
 
-HotSpot baseline на BellSoft Liberica:
+## Ручной sandbox и ограничение измерений
 
 ```bash
-bash scripts/run-experiment.sh profiles/work-hotspot-baseline.env
-```
-
-OpenJ9:
-
-```bash
-bash scripts/run-experiment.sh profiles/work-openj9-baseline.env
-```
-
-GraalVM JIT:
-
-```bash
-bash scripts/run-experiment.sh profiles/work-graalvm-baseline.env
-```
-
-С переопределением нагрузки:
-
-```bash
-RATE=30 DURATION=10m ORDER_POOL=20000 bash scripts/run-experiment.sh profiles/work-hotspot-baseline.env
-```
-
-## Где лежат результаты
-
-```text
-results/<RUN_ID>/
-  metadata.json
-  run-info.json
-  health.json
-  synthetic-runtime.json
-  k6-summary.json
-  k6.log
-  prometheus-before.txt
-  prometheus-after.txt
-  app.log
-  docker-compose-ps.txt
-  docker-stats.txt
-  app-logs/gc.log
-  jcmd-vm-command-line.txt
-  jcmd-vm-flags.txt
-  jcmd-vm-system-properties.txt
-```
-
-## Что проверить после запуска
-
-```bash
-cat results/<RUN_ID>/metadata.json
-cat results/<RUN_ID>/run-info.json
-cat results/<RUN_ID>/docker-stats.txt
-cat results/<RUN_ID>/synthetic-runtime.json
-```
-
-В `run-info.json` должны совпадать:
-
-```text
-jvmVariant
-jvmProfile
-runtime inputArguments
-maxHeapMb около 512
-availableProcessors около 1
-```
-
-## Ручной запуск sandbox
-
-```bash
-bash scripts/run-enterprise-sandbox.sh hotspot-liberica
-bash scripts/run-enterprise-sandbox.sh openj9
-bash scripts/run-enterprise-sandbox.sh graalvm-jit
-```
-
-Проверка API:
-
-```bash
-curl http://localhost:8080/actuator/health
+bash scripts/run-enterprise-sandbox.sh graalvm-native
+# В другом терминале:
+curl http://localhost:8080/actuator/health/readiness
 curl http://localhost:8080/run-info
-curl -X POST 'http://localhost:8080/synthetic/runtime?iterations=20&payloadSize=100000'
-curl -X POST 'http://localhost:8080/orders/generate?count=1000'
+curl -X POST 'http://localhost:8080/orders/generate?count=100'
 curl -X POST 'http://localhost:8080/orders/order-1/process'
+curl http://localhost:8080/orders/order-1
 ```
 
-## Важное ограничение
-
-Локальный запуск не идентичен Kubernetes. Он воспроизводимо моделирует один pod: CPU limit, memory limit, heap, timezone, port, JVM options и runtime image. На macOS Docker работает через VM, поэтому абсолютные цифры RSS/CPU могут отличаться от Linux/Kubernetes node.
+Ручной sandbox — отдельный, сохраняющий данные workflow. Перед автоматическими
+экспериментами остановите его, чтобы освободить порты.
+Docker Desktop измеряет Linux VM, не RSS приложения в macOS. Для переноса выводов в
+Kubernetes повторите замеры на репрезентативном Linux node.

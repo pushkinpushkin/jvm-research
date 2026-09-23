@@ -2,6 +2,7 @@ plugins {
     java
     application
     id("org.springframework.boot") version "3.4.4"
+    id("org.graalvm.buildtools.native") version "0.10.6"
     id("me.champeau.jmh") version "0.7.3"
 }
 
@@ -62,4 +63,17 @@ dependencies {
 
     jmh("org.openjdk.jmh:jmh-core:1.37")
     jmhAnnotationProcessor("org.openjdk.jmh:jmh-generator-annprocess:1.37")
+}
+
+// Spring Boot wires processAot into nativeCompile. Keep JMH on the JVM.
+graalvmNative {
+    binaries {
+        named("main") {
+            imageName.set("jvm-research")
+            buildArgs.add("--no-fallback")
+        }
+    }
+    metadataRepository {
+        enabled.set(true)
+    }
 }

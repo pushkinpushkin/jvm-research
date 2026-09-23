@@ -2,7 +2,8 @@ package dev.pushkin.jvmresearch.enterprise.runinfo;
 
 import dev.pushkin.jvmresearch.enterprise.config.ExperimentRunProperties;
 import java.lang.management.ManagementFactory;
-import java.lang.management.RuntimeMXBean;
+import java.util.List;
+import org.springframework.core.NativeDetector;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -22,7 +23,7 @@ public class RunInfoService {
     }
 
     public RunInfoResponse getRunInfo() {
-        RuntimeMXBean runtimeMxBean = ManagementFactory.getRuntimeMXBean();
+
         Runtime runtime = Runtime.getRuntime();
 
         return new RunInfoResponse(
@@ -37,7 +38,7 @@ public class RunInfoService {
                 System.getProperty("java.vm.name"),
                 System.getProperty("java.vm.version"),
                 System.getProperty("java.vm.vendor"),
-                runtimeMxBean.getInputArguments(),
+                NativeDetector.inNativeImage() ? List.of() : ManagementFactory.getRuntimeMXBean().getInputArguments(),
                 toMb(runtime.maxMemory()),
                 toMb(runtime.totalMemory()),
                 toMb(runtime.freeMemory()),

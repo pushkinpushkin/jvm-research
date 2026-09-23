@@ -1,0 +1,14 @@
+ARG NATIVE_BUILDER_IMAGE=container-registry.oracle.com/graalvm/native-image:21-ol9
+ARG RUNTIME_IMAGE=oraclelinux:9-slim
+FROM ${NATIVE_BUILDER_IMAGE} AS build
+WORKDIR /workspace
+COPY gradlew settings.gradle.kts build.gradle.kts ./
+COPY gradle ./gradle
+COPY src ./src
+RUN chmod +x gradlew && ./gradlew --no-daemon nativeCompile
+
+FROM ${RUNTIME_IMAGE}
+WORKDIR /app
+COPY --from=build /workspace/build/native/nativeCompile/jvm-research /app/jvm-research
+EXPOSE 8080
+ENTRYPOINT ["/app/jvm-research"]

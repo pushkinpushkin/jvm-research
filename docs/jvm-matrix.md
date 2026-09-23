@@ -1,90 +1,57 @@
-# JVM matrix
+# Runtime matrix
 
-## Зачем нужна матрица
-
-В исследовании сравниваем не абстрактные JVM, а конкретные runtime-варианты, которые можно воспроизвести в публичном окружении:
-
-1. BellSoft Liberica HotSpot baseline;
-2. альтернативная JVM с другим memory/runtime профилем;
-3. GraalVM JIT как популярный эталон для сравнений.
-
-## Выбранные варианты
-
-| Variant | JVM type | Image | Role |
+| Variant | Режим | Runtime image | Профили нового этапа |
 |---|---|---|---|
-| `hotspot-liberica` | HotSpot / BellSoft Liberica | `bellsoft/liberica-openjre-alpine:21.0.11-11` | HotSpot baseline |
-| `openj9` | Eclipse OpenJ9 / IBM Semeru | `ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy` | эталонный OpenJ9 runtime для сравнения memory footprint / warmup |
-| `graalvm-jit` | Oracle GraalVM JDK | `container-registry.oracle.com/graalvm/jdk:21` | GraalVM в JVM/JIT режиме, без Native Image |
+| hotspot-liberica | HotSpot / Liberica JIT | bellsoft/liberica-openjre-alpine:21.0.11-11 | work-hotspot-fixed / elastic |
+| openj9 | Eclipse OpenJ9 / IBM Semeru JIT | ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy | work-openj9-fixed / elastic |
+| graalvm-jit | Oracle GraalVM JIT | container-registry.oracle.com/graalvm/jdk:21 | work-graalvm-fixed / elastic |
+| graalvm-native | GraalVM Native Image AOT | oraclelinux:9-slim | work-graalvm-native |
 
-## Почему так
+Native Image — не четвёртая JVM. Это executable, собранный заранее из того же приложения.
+Отсутствие JIT code cache, jcmd и части MXBeans у native — нормальное различие runtime.
+Все новые профили используют 2 CPU / 1 GiB. Исторические baseline-файлы оставлены с 1 CPU.
 
-### HotSpot / BellSoft Liberica
+## Native build
 
-Это публичный BellSoft Liberica baseline для сравнения. Он сохраняет смысл HotSpot baseline без привязки к приватным registry.
+`org.graalvm.buildtools.native:0.10.6` включает стандартную задачу `nativeCompile`;
+Spring Boot 3.4.4 подключает `processAot`. Reachability metadata repository включён.
+Отдельный `Dockerfile.native` использует builder
+`container-registry.oracle.com/graalvm/native-image:21-ol9` и совместимую glibc/OL9 runtime-базу.
+Entrypoint запускает `/app/jvm-research`; JVM в финальном контейнере не требуется.
+`--no-fallback` запрещает незаметную замену native результата JVM-запуском.
+JMH остаётся прежним JVM-экспериментом.
 
-### OpenJ9 / IBM Semeru
+Точечные binding hints добавлены для DTO ответов RestClient и Kafka BusinessEvent.
+DTO внешнего HTTP-клиента не выводятся из сигнатур MVC-контроллеров; Kafka также выбирает
+тип из configuration/type headers. MVC и MongoDB используют обычную Spring AOT обработку.
+`RunInfoService` не запрашивает RuntimeMXBean inputArguments в native; там возвращается
+пустой список. Бизнес-цепочка, listeners, scheduler'ы и интеграции не отключаются.
+Эти изменения основаны на проверке исходников; завершённая native сборка и runtime smoke
+обязательны для подтверждения совместимости (см. validation.md).
 
-Берём IBM Semeru, потому что это официальный распространённый способ использовать Eclipse OpenJ9 вместе с OpenJDK class libraries. Версию фиксируем на Java 21.0.11.0, чтобы не сравнивать плавающий latest.
+## Memory profiles
 
-Для первого этапа выбран `jdk-jammy`, потому что текущая песочница собирает Gradle-проект внутри контейнера. Когда появится отдельный application jar, можно добавить runtime-only вариант на JRE.
+- `fixed-heap`: Xms512m/Xmx512m на трёх JVM — текущая production-like гипотеза.
+- `elastic-heap`: Xms32m/Xmx512m на трёх JVM — небольшой стартовый heap с тем же потолком.
+  32 MiB — контролируемая экспериментальная настройка, не универсальная рекомендация.
+- `native-default`: native heap ergonomics, контейнер ограничен 1 GiB. Это **не**
+  утверждение об одинаковом Xmx=512m; сравниваем общий footprint при одинаковом внешнем лимите.
 
-### GraalVM JDK
+GC каждой JVM оставлен стандартным; исходные GC logs сохранены в JVM-профилях.
+Не объединяйте результаты fixed/elastic/native-default. Экономия памяти оценивается вместе
+с latency, ошибками и риском OOM. Kubernetes memory request сам по себе не задаёт Xms.
 
-Берём GraalVM JDK 21, но именно JVM/JIT режим. Native Image — отдельный класс эксперимента, его нельзя честно сравнивать в одной строке с HotSpot/OpenJ9 JVM runtime.
+## Воспроизводимость
 
-Для Native Image позже можно сделать отдельную ветку исследования:
+Language level остаётся Java 21. Образы имеют разные OS/libc; результат относится к
+полному runtime-дистрибутиву, а не только алгоритму JIT/GC.
+GraalVM `:21`, native builder и OL9 теги плавающие: перед окончательной серией фиксируйте
+`RUNTIME_IMAGE` и `NATIVE_BUILDER_IMAGE` через `@sha256:...` для всех повторов.
+Metadata сохраняет имена образов и ID собранного app image; build.log сохраняет разрешение
+build inputs. Image ID приложения не заменяет фиксацию digest builder и base image.
 
-- build time;
-- image size;
-- startup;
-- memory;
-- ограничения reflection/proxy/resources;
-- совместимость со Spring Boot.
-
-## Почему не берём Java 25 как основной baseline
-
-Java 25 уже актуален как новая линия, но предыдущий план исследования завязан на Java 21. Для прикладного вывода важнее сравнить разные JVM на одном LTS уровне, чем смешивать JVM runtime и переход на новую Java-версию.
-
-Java 25 можно добавить позже как отдельную ось:
-
-```text
-HotSpot 21 vs HotSpot 25
-OpenJ9 21 vs OpenJ9 25
-GraalVM 21 vs GraalVM 25
-```
-
-Но это уже другое исследование: не только JVM implementation, но и Java version upgrade.
-
-## Правила фиксации версий
-
-1. В Dockerfile используем `ARG BASE_IMAGE`, чтобы можно было переопределить образ без редактирования файла.
-2. Для воспроизводимых прогонов сохраняем `java -version` в `results/<variant>/java-version.txt`.
-3. После первого успешного pull можно дополнительно зафиксировать digest образа.
-4. В отчёте всегда указываем не только JVM, но и OS/base image: Alpine, Jammy, Noble и т.д.
-
-## Команды сборки
-
-```bash
-docker build -f docker/hotspot/Dockerfile -t jvm-research:hotspot-liberica .
-docker build -f docker/openj9/Dockerfile -t jvm-research:openj9 .
-docker build -f docker/graalvm/Dockerfile -t jvm-research:graalvm-jit .
-```
-
-Переопределить образ можно так:
-
-```bash
-docker build \
-  -f docker/openj9/Dockerfile \
-  --build-arg BASE_IMAGE=ibm-semeru-runtimes:open-21-jdk-jammy \
-  -t jvm-research:openj9-floating-21 .
-```
-
-## Что сравнивать в отчёте
-
-Минимальная таблица результата:
-
-| Variant | Java version | JVM name | OS base | Startup | Warmup | Throughput | RSS | Heap | GC |
-|---|---|---|---|---:|---:|---:|---:|---:|---:|
-| hotspot-liberica | TBD | TBD | Alpine | TBD | TBD | TBD | TBD | TBD | TBD |
-| openj9 | TBD | TBD | Ubuntu Jammy | TBD | TBD | TBD | TBD | TBD | TBD |
-| graalvm-jit | TBD | TBD | Oracle Linux based | TBD | TBD | TBD | TBD | TBD | TBD |
+Сборка и прогоны: [local-runbook.md](local-runbook.md).
+Официальная документация:
+- https://docs.spring.io/spring-boot/3.4/gradle-plugin/aot.html
+- https://graalvm.github.io/native-build-tools/0.10.6/gradle-plugin.html
+- https://www.graalvm.org/jdk21/getting-started/container-images/

@@ -2,16 +2,18 @@ services:
   sandbox-service:
     build:
       context: ..
-      dockerfile: Dockerfile
+      dockerfile: ${RUNTIME_DOCKERFILE:-Dockerfile}
       args:
+        NATIVE_BUILDER_IMAGE: ${NATIVE_BUILDER_IMAGE:-container-registry.oracle.com/graalvm/native-image:21-ol9}
         RUNTIME_IMAGE: ${RUNTIME_IMAGE:-bellsoft/liberica-openjre-alpine:21.0.11-11}
     image: jvm-research-sandbox:${JVM_VARIANT:-hotspot-liberica}
-    cpus: "${CONTAINER_CPU_LIMIT:-1}"
+    cpus: "${CONTAINER_CPU_LIMIT:-2}"
     mem_limit: ${CONTAINER_MEMORY_LIMIT:-1g}
     ports:
       - "${APP_PORT:-8080}:8080"
     environment:
       SERVER_PORT: "8080"
+      SERVER_MAX_HTTP_REQUEST_HEADER_SIZE: "30000"
       TZ: ${TZ:-Europe/Moscow}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-production,kubernetes}
       MONGO_URI: mongodb://mongo:27017/jvm_research
@@ -29,10 +31,10 @@ services:
       JVM_VARIANT: ${JVM_VARIANT:-hotspot-liberica}
       JVM_PROFILE: ${JVM_PROFILE:-local}
       GIT_SHA: ${GIT_SHA:-unknown}
-      CONTAINER_CPU_LIMIT: ${CONTAINER_CPU_LIMIT:-1}
+      CONTAINER_CPU_LIMIT: ${CONTAINER_CPU_LIMIT:-2}
       CONTAINER_MEMORY_LIMIT: ${CONTAINER_MEMORY_LIMIT:-1g}
       WORK_CPU_REQUEST: ${WORK_CPU_REQUEST:-10m}
-      WORK_CPU_LIMIT: ${WORK_CPU_LIMIT:-1}
+      WORK_CPU_LIMIT: ${WORK_CPU_LIMIT:-2}
       WORK_MEMORY_REQUEST: ${WORK_MEMORY_REQUEST:-512Mi}
       WORK_MEMORY_LIMIT: ${WORK_MEMORY_LIMIT:-1Gi}
       WORK_TIMEZONE: ${WORK_TIMEZONE:-Europe/Moscow}

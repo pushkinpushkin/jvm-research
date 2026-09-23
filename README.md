@@ -1,6 +1,6 @@
 # JVM Research Sandbox
 
-Песочница для сравнения поведения разных JVM на одинаковом Java-коде: HotSpot Liberica baseline, OpenJ9 и GraalVM JIT.
+Песочница для сравнения HotSpot Liberica, OpenJ9, GraalVM JIT и GraalVM Native Image/AOT на одном Spring Boot 3.4.4 приложении. Основной новый этап — память idle/low-load/load при 2 CPU, 1 GiB и длительности 30 минут.
 
 Цель репозитория — быстро получать воспроизводимые замеры, а потом переносить подход на реальные микросервисы.
 
@@ -12,7 +12,9 @@
 | `openj9` | Eclipse OpenJ9 / IBM Semeru | `ibm-semeru-runtimes:open-21.0.11.0-jdk-jammy` | эталонный OpenJ9 |
 | `graalvm-jit` | Oracle GraalVM JDK | `container-registry.oracle.com/graalvm/jdk:21` | GraalVM в JVM/JIT режиме |
 
-Подробности: [`docs/jvm-matrix.md`](docs/jvm-matrix.md).
+| `graalvm-native` | GraalVM Native Image / AOT | `oraclelinux:9-slim` | Native executable, без JVM/JIT |
+
+Подробности: [`docs/jvm-matrix.md`](docs/jvm-matrix.md). Native Image не является четвёртой JVM; сравниваем общие container/startup/HTTP метрики.
 
 ## Что внутри
 
@@ -79,73 +81,51 @@ chmod +x gradlew scripts/*.sh
 ./gradlew jmh
 ```
 
-## Production-like experiment profiles
+## Новый этап: memory footprint
 
-Профили в `profiles/` повторяют generic production-like форму pod'а:
+Старые `profiles/work-*-baseline.env` сохранены с **1 CPU / Xms=Xmx512m** для
+исторической воспроизводимости. Новые профили используют **2 CPU / 1 GiB**:
 
-```text
-replicaCount: 3
-container cpu limit: 1
-container memory limit: 1Gi
-java heap: 512Mi
-port: 8080
-timezone: Europe/Moscow
-prometheus: enabled
-extraJavaOpts: -Dserver.max-http-request-header-size=30000
-```
+| Runtime | Fixed heap | Elastic heap |
+|---|---|---|
+| HotSpot | `work-hotspot-fixed.env` | `work-hotspot-elastic.env` |
+| OpenJ9 | `work-openj9-fixed.env` | `work-openj9-elastic.env` |
+| GraalVM JIT | `work-graalvm-fixed.env` | `work-graalvm-elastic.env` |
+| GraalVM Native | `work-graalvm-native.env` — отдельный `native-default` | тот же native профиль |
 
-Локально моделируются именно runtime-ограничения процесса:
-
-```text
-Kubernetes limits.cpu=1        -> docker compose cpus=1
-Kubernetes limits.memory=1Gi   -> docker compose mem_limit=1g
-Kubernetes requests.memory=512Mi -> -Xms512m -Xmx512m
-app.timezone=Europe/Moscow     -> TZ + -Duser.timezone
-app.extraJavaOpts              -> JAVA_TOOL_OPTIONS
-```
-
-Запуск полного эксперимента:
+Fixed: Xms512m/Xmx512m. Elastic: Xms32m/Xmx512m. У native контролируется внешний
+лимит контейнера; одинаковый heap ceiling с JVM не заявляется.
+Экспортированные env переопределяют значения профиля. Не смешивайте эти серии.
 
 ```bash
-bash scripts/run-experiment.sh profiles/work-hotspot-baseline.env
-bash scripts/run-experiment.sh profiles/work-openj9-baseline.env
-bash scripts/run-experiment.sh profiles/work-graalvm-baseline.env
+# Native build: GraalVM JDK 21 с native-image, либо полностью Docker build.
+./gradlew nativeCompile
+docker build -f Dockerfile.native -t jvm-research-sandbox:graalvm-native .
+
+# Короткий enterprise smoke для каждого runtime.
+for profile in work-hotspot-fixed work-openj9-fixed work-graalvm-fixed work-graalvm-native; do
+  SCENARIO=load RATE=1 DURATION=1m ORDER_POOL=100 SEED_ORDERS=100 \
+    RESULTS_ROOT=results/smoke bash scripts/run-experiment.sh "profiles/${profile}.env" || break
+done
+
+# Память без бизнес-нагрузки; никаких seed или synthetic вызовов.
+SCENARIO=idle DURATION=30m bash scripts/run-experiment.sh profiles/work-hotspot-elastic.env
+SCENARIO=low-load RATE=1 DURATION=30m bash scripts/run-experiment.sh profiles/work-hotspot-elastic.env
+SCENARIO=load RATE=10 DURATION=30m bash scripts/run-experiment.sh profiles/work-hotspot-fixed.env
+SCENARIO=load RATE=25 DURATION=30m bash scripts/run-experiment.sh profiles/work-hotspot-fixed.env
+
+bash scripts/compare-benchmark-root.sh results
 ```
 
-Можно переопределить нагрузку:
+Подставьте соответствующий профиль OpenJ9/GraalVM JIT/native для той же нагрузки.
+`DURATION=1m`/`3m` остаются доступны. k6 обязателен для low-load/load, idle его не требует.
+Периодический collector одинаков для всех runtime; `INTERVAL_SECONDS=5` по умолчанию.
 
-```bash
-RATE=30 DURATION=10m ORDER_POOL=20000 bash scripts/run-experiment.sh profiles/work-hotspot-baseline.env
-```
-
-Каждый прогон сохраняется в отдельную директорию:
-
-```text
-results/<RUN_ID>/
-  metadata.json
-  run-info.json
-  health.json
-  synthetic-runtime.json
-  k6-summary.json
-  k6.log
-  prometheus-before.txt
-  prometheus-after.txt
-  app.log
-  docker-compose-ps.txt
-  docker-stats.txt
-  app-logs/gc.log
-  jcmd-vm-command-line.txt
-  jcmd-vm-flags.txt
-  jcmd-vm-system-properties.txt
-```
-
-Проверить, какие JVM-ключи реально увидел процесс:
-
-```bash
-curl http://localhost:8080/run-info
-```
-
-`/run-info` возвращает JVM vendor/name/version, `inputArguments`, heap, processors, `RUN_ID`, профиль и ссылку на generic production-like настройки.
+Каждый run сохраняет metadata, startup, `runtime-metrics.csv`, Prometheus scrapes,
+конфигурацию Compose, image ID, логи и k6 summary (кроме idle). Память контейнера —
+Docker working-set estimate, не RSS и не heap. Подробности и все команды:
+[local-runbook](docs/local-runbook.md), [metrics](docs/metrics.md),
+[план исследования](docs/experiment-plan.md), [статус проверок](docs/validation.md).
 
 ## Enterprise sandbox layer
 
@@ -237,4 +217,4 @@ docker build --build-arg RUNTIME_IMAGE=container-registry.oracle.com/graalvm/jdk
 
 Не делаем вывод по одному запуску и только по среднему времени. Для JVM важны прогрев, JIT-компиляция, GC, контейнерные лимиты, профиль нагрузки и повторяемость результата.
 
-Native Image пока не входит в эту матрицу. Это отдельный эксперимент, потому что там сравнивается уже не JVM runtime, а AOT-компиляция и другой способ поставки приложения.
+Native Image включён как отдельный AOT/runtime-вариант. Его совместимость и ограничения диагностики проверяются отдельно; отсутствие JVM-only метрик не трактуется как нулевое потребление памяти.
