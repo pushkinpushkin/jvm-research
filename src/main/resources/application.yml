@@ -25,6 +25,13 @@ spring:
         spring.json.value.default.type: dev.pushkin.jvmresearch.enterprise.kafka.BusinessEvent
 
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,mongo
   endpoints:
     web:
       exposure:
@@ -40,10 +47,10 @@ experiment:
     jvm-variant: ${JVM_VARIANT:local}
     jvm-profile: ${JVM_PROFILE:local}
     git-sha: ${GIT_SHA:unknown}
-    container-cpu-limit: ${CONTAINER_CPU_LIMIT:1}
+    container-cpu-limit: ${CONTAINER_CPU_LIMIT:2}
     container-memory-limit: ${CONTAINER_MEMORY_LIMIT:1g}
     work-cpu-request: ${WORK_CPU_REQUEST:10m}
-    work-cpu-limit: ${WORK_CPU_LIMIT:1}
+    work-cpu-limit: ${WORK_CPU_LIMIT:2}
     work-memory-request: ${WORK_MEMORY_REQUEST:512Mi}
     work-memory-limit: ${WORK_MEMORY_LIMIT:1Gi}
     work-timezone: ${WORK_TIMEZONE:Europe/Moscow}

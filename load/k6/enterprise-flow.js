@@ -1,5 +1,5 @@
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check, sleep, fail } from 'k6';
 
 const baseUrl = __ENV.BASE_URL || 'http://localhost:8080';
 const orderPool = Number(__ENV.ORDER_POOL || 10000);
@@ -26,6 +26,9 @@ export const options = {
 export function setup() {
   const count = Number(__ENV.SEED_ORDERS || orderPool);
   const response = http.post(`${baseUrl}/orders/generate?count=${count}`);
+  if (response.status < 200 || response.status >= 300) {
+    fail(`Seed failed: HTTP ${response.status}`);
+  }
   check(response, {
     'seed orders accepted': (r) => r.status >= 200 && r.status < 300,
   });

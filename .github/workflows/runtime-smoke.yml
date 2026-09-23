@@ -1,0 +1,41 @@
+name: Runtime smoke
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: python3 -m unittest discover -s scripts/tests -v
+      - run: ./gradlew --no-daemon test bootJar
+  smoke:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [work-hotspot-fixed, work-openj9-fixed, work-graalvm-fixed, work-graalvm-native]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+        with:
+          k6-version: '0.57.0'
+      - name: Build, readiness, idle and enterprise flow
+        env:
+          RESULTS_ROOT: results/verification
+        run: bash scripts/smoke-runtime.sh profiles/${{ matrix.profile }}.env
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.profile }}
+          path: results/
+          retention-days: 7

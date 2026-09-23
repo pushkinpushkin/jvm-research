@@ -16,9 +16,14 @@ case "${variant}" in
     export JVM_VARIANT="graalvm-jit"
     export RUNTIME_IMAGE="container-registry.oracle.com/graalvm/jdk:21"
     ;;
+  graalvm-native)
+    export JVM_VARIANT="graalvm-native"
+    export RUNTIME_IMAGE="${RUNTIME_IMAGE:-oraclelinux:9-slim}"
+    export RUNTIME_DOCKERFILE="Dockerfile.native"
+    ;;
   *)
     echo "Unknown JVM variant: ${variant}" >&2
-    echo "Usage: $0 [hotspot-liberica|openj9|graalvm-jit]" >&2
+    echo "Usage: $0 [hotspot-liberica|openj9|graalvm-jit|graalvm-native]" >&2
     exit 1
     ;;
 esac

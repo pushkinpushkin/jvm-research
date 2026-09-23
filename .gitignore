@@ -25,3 +25,7 @@ replay_pid*
 # Local infra data
 infra/mongo-data/
 *.log
+
+# Python script caches
+__pycache__/
+*.pyc
