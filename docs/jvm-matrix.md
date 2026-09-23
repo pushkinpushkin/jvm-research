@@ -26,8 +26,8 @@ DTO внешнего HTTP-клиента не выводятся из сигна
 тип из configuration/type headers. MVC и MongoDB используют обычную Spring AOT обработку.
 `RunInfoService` не запрашивает RuntimeMXBean inputArguments в native; там возвращается
 пустой список. Бизнес-цепочка, listeners, scheduler'ы и интеграции не отключаются.
-Эти изменения основаны на проверке исходников; завершённая native сборка и runtime smoke
-обязательны для подтверждения совместимости (см. validation.md).
+Native сборка и короткие idle/load integration smoke подтверждены в CI 2026-09-23
+(см. [validation.md](validation.md)); это проверка перечисленных путей, не всех возможных входов.
 
 ## Memory profiles
 
