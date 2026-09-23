@@ -92,12 +92,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('root', type=Path)
     parser.add_argument('--csv', action='store_true', help='Print one CSV row per run')
+    parser.add_argument('--html', type=Path, metavar='FILE',
+                        help='Create a self-contained interactive HTML comparison report')
     args = parser.parse_args()
+    if args.csv and args.html:
+        parser.error('--csv and --html are separate output modes')
     runs = sorted({p.parent for name in ['metadata.json', 'k6-summary.json'] for p in args.root.rglob(name)})
     if not runs:
         parser.error(f'No run metadata or k6 summaries under {args.root}')
     rows = [summarize(run) for run in runs]
-    if args.csv:
+    if args.html:
+        from chart_report import write_report
+        target = write_report(runs, rows, args.html)
+        print(f'HTML comparison report saved to {target}')
+    elif args.csv:
         writer = csv.DictWriter(sys.stdout, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)

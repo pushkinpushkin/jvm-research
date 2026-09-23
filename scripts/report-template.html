@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JVM Research · Comparison</title>
+<style>
+:root{--ink:#172735;--muted:#687c88;--paper:#f2f5f2;--card:#fff;--line:#dbe3e2;--teal:#126d70;--red:#d5684d;--blue:#475fb5;--violet:#7f509d}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 80% -12%,#d2e9e0,transparent 42%),var(--paper);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:1240px;margin:auto;padding:40px 24px 80px}header{display:flex;justify-content:space-between;align-items:flex-start;gap:30px;margin-bottom:28px}
+.kicker{text-transform:uppercase;letter-spacing:.18em;color:var(--teal);font-size:11px;font-weight:800;margin:0 0 8px}
+h1{font-size:clamp(34px,5vw,60px);line-height:1.07;letter-spacing:-.047em;margin:0;font-weight:750}header p{color:var(--muted);max-width:660px;margin:15px 0 0}
+.badge{border:1px solid #afd1c6;color:#27665a;background:#e4f3ec;border-radius:99px;font-size:12px;font-weight:650;padding:7px 13px;white-space:nowrap}
+.controls{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin:0 0 20px}label.caption{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:0 0 6px}
+select{appearance:auto;background:#fff;border:1px solid #cad9d8;border-radius:12px;padding:11px 14px;font:inherit;color:var(--ink);width:min(100%,650px)}
+.statstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}.stat{background:#18323b;color:#fff;padding:18px 20px;border-radius:16px;min-height:96px}
+.stat:nth-child(2){background:#24515c}.stat:nth-child(3){background:#24545a}.stat:nth-child(4){background:#396266}.stat strong{display:block;font-size:25px;letter-spacing:-.04em}.stat small{color:#c4e0db;font-size:12px}
+.note{background:#fff7e9;border:1px solid #efddba;border-radius:14px;padding:13px 17px;color:#775327;font-size:13px;margin:0 0 20px}
+.card{background:var(--card);border:1px solid #e3e9e8;box-shadow:0 15px 40px -35px #1028336b;border-radius:20px;padding:24px 28px;margin:0 0 18px}
+.card h2{font-size:19px;letter-spacing:-.025em;margin:0}.card p{color:var(--muted);font-size:13px;margin:5px 0 20px}
+.series-list{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:20px}.series-pill{font:inherit;font-size:12px;border:1px solid #dbe3e2;background:#fff;padding:7px 11px;border-radius:99px;cursor:pointer;color:var(--ink)}
+.series-pill.active{background:#eaf2ee}.series-pill.inactive{opacity:.48}.swatch{display:inline-block;vertical-align:middle;width:20px;height:4px;border-radius:2px;margin-right:8px}
+.graph{position:relative;min-height:220px}svg{display:block;width:100%;height:auto;overflow:visible}.grid{stroke:#e6eceb;stroke-width:1}.axis{fill:#73868d;font-size:12px}.tick-line{stroke:#b9c9c8;stroke-width:1}
+.chart-line{stroke-width:2.7;fill:none;stroke-linecap:round;stroke-linejoin:round}.endpoint{stroke:#fff;stroke-width:2}.hit{fill:transparent;cursor:crosshair}
+.tooltip{pointer-events:none;position:absolute;background:#182f38;color:#fff;padding:8px 11px;border-radius:9px;font-size:12px;box-shadow:0 9px 25px #18313a55;min-width:110px;z-index:3;white-space:nowrap;transform:translate(10px,-105%)}
+.comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.comparison .card{margin:0}.comparison .card:last-child{grid-column:1/-1}
+.bar-row{display:grid;grid-template-columns:minmax(125px,185px) minmax(60px,1fr) 75px;gap:12px;align-items:center;margin:11px 0}.bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.bar-track{height:12px;background:#eaf0ee;border-radius:9px;overflow:hidden}.bar-fill{height:100%;border-radius:9px;min-width:2px}.bar-value{text-align:right;font-variant-numeric:tabular-nums;font-size:12px}
+.empty{padding:40px 8px;text-align:center;color:var(--muted);border:1px dashed #cfddda;border-radius:13px}
+footer{font-size:12px;color:var(--muted);line-height:1.7;margin:23px 0 0}
+@media(max-width:760px){main{padding:24px 13px 50px}.statstrip{grid-template-columns:repeat(2,1fr)}.comparison{grid-template-columns:1fr}.comparison .card:last-child{grid-column:auto}.card{padding:20px 14px}header{display:block}header .badge{display:inline-block;margin-top:15px}.bar-row{grid-template-columns:110px 1fr 64px;gap:7px}}
+</style>
+</head>
+<body>
+<main>
+<header><div><div class="kicker">JVM Research / Observatory</div><h1>Память под наблюдением.</h1><p>Одни и те же контейнерные метрики для HotSpot, OpenJ9, GraalVM JIT и Native Image. Каждая линия — отдельный запуск, без усреднения между прогонами.</p></div><span class="badge">Локальный отчёт · offline</span></header>
+<div class="controls"><div><label class="caption" for="group">Сопоставимые условия</label><select id="group"></select></div></div>
+<div class="statstrip"><div class="stat"><strong id="count">—</strong><small>запусков</small></div><div class="stat"><strong id="variants">—</strong><small>runtime</small></div><div class="stat"><strong id="window">—</strong><small>заданная длительность</small></div><div class="stat"><strong id="limits">—</strong><small>лимит приложения</small></div></div>
+<div id="notice" class="note"></div>
+<div class="card"><h2>Память во времени</h2><p>Docker working set, МиБ · отсчёт от readiness · полный контейнер, включая runtime. Короткие smoke запуски не показывают стабилизацию.</p><div id="legend" class="series-list"></div><div id="memory" class="graph"></div></div>
+<div class="card"><h2>CPU во времени</h2><p>Docker CPU % · 100% соответствует одному полностью загруженному ядру.</p><div id="cpu" class="graph"></div></div>
+<div class="comparison"><div class="card"><h2>Пиковая память</h2><p>Максимальная измеренная точка, МиБ. Краткие пики между выборками могут не попасть в ряд.</p><div id="peak"></div></div><div class="card"><h2>Запуск до readiness</h2><p>Время от старта контейнера, секунды. Сборка образа не включена.</p><div id="startup"></div></div><div class="card"><h2>HTTP p95 за весь прогон</h2><p>Время ответа, мс. Для idle отсутствует по смыслу.</p><div id="p95"></div></div></div>
+<div id="latency-card" class="card"><h2>HTTP p95 по минутам</h2><p>Доступно при K6_TIME_SERIES=true. Отсчёт от первого HTTP-запроса k6 (включая seed), число запросов в окне видно при наведении.</p><div id="latency" class="graph"></div></div>
+<footer>Выбирайте условия вверху и включайте отдельные линии. Разные memory profile подписаны отдельно: fixed heap, elastic heap и native default имеют разные настройки heap. Для итоговых выводов сравнивайте также ошибки, фактическое число запросов и повторы. Источник данных — metadata.json, runtime-metrics.csv и k6-summary.json; при наличии — k6-timeseries.json. График не заменяет исходные файлы.</footer>
+</main>
+<script type="application/json" id="report-data">__REPORT_DATA__</script>
+<script>
+'use strict';
+const runs=JSON.parse(document.getElementById('report-data').textContent);
+const $=id=>document.getElementById(id);
+const colors={'hotspot-liberica':'#126d70','openj9':'#d5684d','graalvm-jit':'#475fb5','graalvm-native':'#7f509d'};
+const color=run=>colors[run.runtime]||'#587985';
+const groups=new Map();
+for(const run of runs){const key=JSON.stringify(run.config);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(run)}
+const choices=[...groups.entries()].sort((a,b)=>new Set(b[1].map(r=>r.runtime)).size-new Set(a[1].map(r=>r.runtime)).size || b[1].length-a[1].length || (b[1][0].scenario==='load')-(a[1][0].scenario==='load'));
+let activeRuns=[],excluded=new Set();
+function fmt(value,digits=1){return value==null?'н/д':Number(value).toLocaleString('ru-RU',{maximumFractionDigits:digits})}
+function label(run){return `${run.runtime} · ${run.memoryProfile} · ${run.name.slice(-9)}`}
+function node(tag,attrs={},parent=null){const element=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,val] of Object.entries(attrs))element.setAttribute(key,val);if(parent)parent.appendChild(element);return element}
+function text(svg,x,y,label,cls='axis',anchor='start'){const el=node('text',{x,y,class:cls,'text-anchor':anchor},svg);el.textContent=label;return el}
+function placeholder(id,message){$(id).replaceChildren();let div=document.createElement('div');div.className='empty';div.textContent=message;$(id).appendChild(div)}
+function lineChart(id,metric,unit,series,opts={}){
+  const target=$(id);target.replaceChildren();
+  const valid=series.filter(item=>item.points.length);
+  if(!valid.length){placeholder(id,opts.empty||'Для этой метрики пока нет временного ряда.');return}
+  const W=980,H=300,L=69,R=23,T=22,B=46,w=W-L-R,h=H-T-B;
+  const all=valid.flatMap(item=>item.points);
+  const xmax=Math.max(1,...all.map(p=>p.t));
+  let ymin=opts.fromZero?0:Math.min(...all.map(p=>p.v));
+  let ymax=Math.max(...all.map(p=>p.v));
+  const span=Math.max(1,ymax-ymin);
+  if(opts.fromZero)ymax=Math.max(1,ymax*1.12);else{ymin=Math.max(0,ymin-span*.17);ymax+=span*.17}
+  const X=t=>L+t/xmax*w,Y=v=>T+h-(v-ymin)/(ymax-ymin)*h;
+  const svg=node('svg',{viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':unit==='МиБ'?'График памяти контейнера':`График ${unit}`});target.appendChild(svg);
+  for(let i=0;i<=4;i++){let v=ymin+(ymax-ymin)*i/4,y=Y(v);node('line',{x1:L,y1:y,x2:L+w,y2:y,class:'grid'},svg);text(svg,L-10,y+4,fmt(v,v>=100?0:1),'axis','end')}
+  for(let i=0;i<=5;i++){let x=L+w*i/5;node('line',{x1:x,y1:T,x2:x,y2:T+h,class:'grid'},svg);text(svg,x,T+h+23,fmt(xmax*i/5,1),'axis','middle')}
+  text(svg,L+w/2,H-3,opts.minutes?'Минуты от первого запроса k6':'Минуты после readiness','axis','middle');text(svg,8,14,unit);
+  const tooltip=document.createElement('div');tooltip.className='tooltip';tooltip.hidden=true;target.appendChild(tooltip);
+  for(const item of valid){const ordered=[...item.points].sort((a,b)=>a.t-b.t);
+    node('path',{d:ordered.map((p,i)=>`${i?'L':'M'}${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' '),stroke:color(item.run),class:'chart-line','stroke-dasharray':item.run.memoryProfile==='elastic-heap'?'8 5':'none'},svg);
+    for(const p of ordered){const dot=node('circle',{cx:X(p.t),cy:Y(p.v),r:9,class:'hit',tabindex:0},svg);
+      const show=e=>{tooltip.hidden=false;tooltip.replaceChildren();tooltip.appendChild(document.createTextNode(`${item.run.runtime} · ${fmt(p.t,2)} мин · ${fmt(p.v,2)} ${unit}${p.n?` · ${p.n} запросов`:''}`));const box=target.getBoundingClientRect();const rect=svg.getBoundingClientRect();tooltip.style.left=`${Math.min(box.width-160,X(p.t)/W*rect.width)}px`;tooltip.style.top=`${Math.max(26,Y(p.v)/H*rect.height)}px`};
+      dot.addEventListener('pointerenter',show);dot.addEventListener('pointerleave',()=>tooltip.hidden=true);dot.addEventListener('focus',show);dot.addEventListener('blur',()=>tooltip.hidden=true)}
+    const last=ordered[ordered.length-1];node('circle',{cx:X(last.t),cy:Y(last.v),r:4.5,fill:color(item.run),class:'endpoint'},svg)
+  }
+}
+function bars(id,key,unit){const host=$(id);host.replaceChildren();const subset=activeRuns.filter(r=>r.metrics[key]!=null);
+  if(!subset.length){placeholder(id,'Нет значений для выбранных запусков.');return}
+  const max=Math.max(...subset.map(r=>r.metrics[key]),.01);
+  for(const run of subset){const row=document.createElement('div');row.className='bar-row';row.title=run.name;
+    const name=document.createElement('span');name.className='bar-label';name.textContent=label(run);
+    const track=document.createElement('div');track.className='bar-track';const fill=document.createElement('div');fill.className='bar-fill';fill.style.width=`${Math.max(0,run.metrics[key]/max*100)}%`;fill.style.background=color(run);track.appendChild(fill);
+    const value=document.createElement('span');value.className='bar-value';value.textContent=`${fmt(run.metrics[key],1)} ${unit}`;
+    row.append(name,track,value);host.appendChild(row)}
+}
+function draw(){activeRuns=groups.get(choices[Number($('group').value)][0]).filter(r=>!excluded.has(r.name));const base=groups.get(choices[Number($('group').value)][0]);const c=base[0].config;
+  $('count').textContent=fmt(base.length,0);$('variants').textContent=fmt(new Set(base.map(r=>r.runtime)).size,0);$('window').textContent=c.duration||'разная';$('limits').textContent=`${c.cpu||'?'} CPU / ${c.memoryLimit||'?'}`;
+  const profiles=new Set(base.map(r=>r.memoryProfile));const warnings=[];
+  if(base.length<2)warnings.push('Пока есть один запуск при этих условиях. Добавь другие runtime для сравнения.');
+  if(profiles.size>1)warnings.push('Разные memory profile отображены вместе для обзора. Сопоставляй их с учётом различий Xms/Xmx и native heap.');
+  if(base.some(r=>r.status!=='completed'))warnings.push('Есть незавершённые или неуспешные запуски; проверь status в metadata.');
+  if(!warnings.length)warnings.push('Условия нагрузки и лимиты совпадают; каждая линия показывает отдельный запуск.');
+  $('notice').textContent=warnings.join(' ');
+  const legend=$('legend');legend.replaceChildren();for(const run of base){let button=document.createElement('button');button.type='button';button.className=`series-pill ${excluded.has(run.name)?'inactive':'active'}`;button.setAttribute('aria-pressed',String(!excluded.has(run.name)));let swatch=document.createElement('i');swatch.className='swatch';swatch.style.background=color(run);button.append(swatch,document.createTextNode(label(run)));button.title=run.name;button.onclick=()=>{excluded.has(run.name)?excluded.delete(run.name):excluded.add(run.name);draw()};legend.appendChild(button)}
+  lineChart('memory','m','МиБ',activeRuns.map(run=>({run,points:run.memory.map(p=>({t:p.t/60,v:p.m}))})));
+  lineChart('cpu','c','%',activeRuns.map(run=>({run,points:run.memory.filter(p=>p.c!=null).map(p=>({t:p.t/60,v:p.c}))})),{fromZero:true});
+  bars('peak','memory_peak_mib','МиБ');bars('startup','startup_s','с');bars('p95','p95_ms','мс');
+  const latency=activeRuns.map(run=>({run,points:run.latency}));$('latency-card').hidden=!latency.some(item=>item.points.length);
+  if(!$('latency-card').hidden)lineChart('latency','p95','мс',latency,{minutes:true,fromZero:true});
+}
+if(!choices.length){$('group').disabled=true;$('notice').textContent='В выбранной папке нет результатов экспериментов.';for(const id of ['memory','cpu','peak','startup','p95'])placeholder(id,'Нет данных');$('latency-card').hidden=true}
+else{choices.forEach(([key,list],i)=>{const g=list[0].config;let option=document.createElement('option');option.value=i;option.textContent=`${g.scenario||'?'} · RATE ${g.rate??'?'} · ${g.duration||'?'} · ${g.cpu||'?'} CPU / ${g.memoryLimit||'?'} · ${list.length} запуск(ов) · git ${String(g.gitSha||'?').slice(0,8)}`;$('group').appendChild(option)});$('group').onchange=()=>{excluded.clear();draw()};draw()}
+</script>
+</body></html>
