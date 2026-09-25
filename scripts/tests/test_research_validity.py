@@ -72,6 +72,21 @@ class AdmissionTests(unittest.TestCase):
     def write(self,name,data): (self.run/name).write_text(json.dumps(data))
     def tearDown(self): self.temp.cleanup()
     def test_complete_evidence_is_eligible(self): self.assertEqual([],validator.validate(self.run)['reasons'])
+    def test_single_boundary_tick_is_not_business_work(self):
+        self.summary['metrics']['trace_boundary_skips']={'count':1}
+        self.summary['metrics']['iterations']={'count':11}
+        self.write('k6-summary.json',self.summary)
+        self.assertTrue(validator.validate(self.run)['eligible'])
+
+    def test_boundary_allowance_cannot_hide_incomplete_or_extra_work(self):
+        for iterations, skips, requests in [(11,0,10),(10,1,10),(12,2,10),(11,1,9),(11,1,11)]:
+            with self.subTest(iterations=iterations,skips=skips,requests=requests):
+                summary=copy.deepcopy(self.summary)
+                for name,value in [('iterations',iterations),('trace_boundary_skips',skips),('http_reqs',requests),('business_requests',requests)]:
+                    summary['metrics'][name]={'count':value}
+                self.write('k6-summary.json',summary)
+                self.assertFalse(validator.validate(self.run)['eligible'])
+
     def test_independent_defects_reject_data(self):
         for change in ('http_error','dropped','lag','event_loss','scheduler','missing_memory'):
             with self.subTest(change=change):

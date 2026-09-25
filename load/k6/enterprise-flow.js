@@ -7,6 +7,7 @@ import { Counter, Trend } from 'k6/metrics';
 const baseUrl = __ENV.BASE_URL || 'http://localhost:8080';
 const requests = new SharedArray('research trace', () => JSON.parse(open(__ENV.TRACE_FILE)).requests);
 const count = new Counter('business_requests');
+const boundary = new Counter('trace_boundary_skips');
 const unexpected = new Counter('unexpected_results');
 const processed = new Counter('business_processed');
 const expectedFaults = new Counter('expected_faults');
@@ -21,7 +22,7 @@ export const options = {
     gracefulStop: '30s',
   }},
   thresholds: {
-    http_req_failed: ['rate==0'], unexpected_results: ['count==0'], dropped_iterations: ['count==0'],
+    trace_boundary_skips: ['count<=1'], http_req_failed: ['rate==0'], unexpected_results: ['count==0'], dropped_iterations: ['count==0'],
     business_latency: [`p(95)<${__ENV.SLO_P95_MS || 1500}`, `p(99)<${__ENV.SLO_P99_MS || 2000}`],
   },
 };
@@ -29,6 +30,10 @@ export const options = {
 // Seeding belongs to the runner's preparation phase, outside this k6 process.
 export default function () {
   const index = exec.scenario.iterationInTest;
+  // constant-arrival-rate can schedule a final tick exactly at duration.
+  // Only that one index is a no-op; all planned requests remain mandatory.
+  if (index === requests.length) { boundary.add(1); return; }
+  boundary.add(0);
   const item = requests[index];
   if (!item) { unexpected.add(1); throw new Error(`Trace exhausted at ${index}`); }
   const response = http.post(`${baseUrl}/orders/${item.orderId}/process`, null,

@@ -56,7 +56,13 @@ def validate(run):
     require(expected is not None and len(requests) == expected, 'Trace length differs from expected iterations')
     summary = read('k6-summary.json') if scenario != 'idle' else {}
     if scenario != 'idle':
-        for name in ('iterations','http_reqs','business_requests'):
+        boundary = metric(summary, 'trace_boundary_skips')
+        if boundary is None: boundary = 0  # Older summaries omit an unused counter.
+        require(boundary in (0, 1), 'Invalid trace boundary skip count')
+        require(isinstance(expected, int) and boundary in (0, 1)
+                and metric(summary, 'iterations') == expected + boundary,
+                'Completed iterations differ from planned work plus boundary skips')
+        for name in ('http_reqs','business_requests'):
             require(metric(summary, name) == expected, f'{name} differs from planned {expected}')
         # k6 may omit a counter that never received samples.
         require(metric(summary, 'dropped_iterations') in (None, 0), 'Dropped iterations')
