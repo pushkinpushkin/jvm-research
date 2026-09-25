@@ -157,7 +157,7 @@ Kubernetes повторите замеры на репрезентативном
 
 ## Протокол v1 и проверка пригодности
 
-Актуальные условия: [research-protocol.md](research-protocol.md). Основная серия использует elastic heap.
+Актуальные условия: [RESEARCH_PROTOCOL.md](../RESEARCH_PROTOCOL.md). Основная серия использует elastic heap.
 
 ```bash
 # Сначала короткая интеграционная проверка (новый изолированный compose project на каждый запуск).
