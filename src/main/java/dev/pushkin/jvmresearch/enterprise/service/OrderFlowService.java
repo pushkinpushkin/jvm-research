@@ -1,107 +1,109 @@
 package dev.pushkin.jvmresearch.enterprise.service;
 
-import dev.pushkin.jvmresearch.enterprise.config.SandboxProperties;
-import dev.pushkin.jvmresearch.enterprise.domain.ClientType;
-import dev.pushkin.jvmresearch.enterprise.domain.FnsProcessStatus;
-import dev.pushkin.jvmresearch.enterprise.domain.OrderDocument;
-import dev.pushkin.jvmresearch.enterprise.domain.OrderStatus;
-import dev.pushkin.jvmresearch.enterprise.external.ExternalApiClient;
-import dev.pushkin.jvmresearch.enterprise.external.ExternalFnsResponse;
-import dev.pushkin.jvmresearch.enterprise.kafka.BusinessEventSource;
-import dev.pushkin.jvmresearch.enterprise.kafka.EnterpriseEventPublisher;
+import dev.pushkin.jvmresearch.enterprise.domain.*;
+import dev.pushkin.jvmresearch.enterprise.external.*;
+import dev.pushkin.jvmresearch.enterprise.kafka.*;
 import dev.pushkin.jvmresearch.enterprise.repository.OrderRepository;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.Objects;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.OptimisticLockingFailureException;
+
 import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.Objects;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderFlowService {
-
     private final OrderRepository repository;
     private final ExternalApiClient externalApiClient;
-    private final DtoMapperService dtoMapperService;
-    private final EnterpriseEventPublisher eventPublisher;
-    private final TrafficProfile trafficProfile;
-    private final PayloadBuilder payloadBuilder;
-    private final SandboxProperties properties;
+    private final DtoMapperService mapper;
+    private final EnterpriseEventPublisher publisher;
+    private final TrafficProfile traffic;
+    private final OrderLocks locks;
+    private final ResearchMetrics metrics;
 
-    public ProcessOrderResponse process(String orderId) {
-        log.info("Order processing started orderId={}", orderId);
-        OrderDocument order = repository.findById(orderId)
-                .orElseGet(() -> OrderDocument.newOrder(orderId, ClientType.INDIVIDUAL, "client-" + orderId, payloadBuilder.createPayload(orderId)));
-
-        Instant now = Instant.now();
-        order.setStatus(OrderStatus.PROCESSING);
-        order.setUpdatedAt(now);
-        order.addHistory(OrderStatus.PROCESSING.name(), BusinessEventSource.HTTP.value(), "HTTP flow started", now);
-
+    public ProcessOrderResponse process(String id) {
         try {
-            ExternalFnsResponse fnsResponse = Objects.requireNonNull(
-                    externalApiClient.getFnsData(orderId),
-                    "External FNS response is null"
-            );
-            Map<String, Object> mappedPayload = dtoMapperService.mergeExternalFnsData(order, fnsResponse);
-            FnsProcessStatus fnsStatus = FnsProcessStatus.fromExternal(fnsResponse.externalStatus());
-
-            order.getFnsProcess().setStatus(fnsStatus);
-            order.getFnsProcess().setRegisteringFns(fnsResponse.registeringFns());
-            order.getFnsProcess().setRegisteringFnsName(fnsResponse.registeringFnsName());
-            order.getFnsProcess().setAttempts(order.getFnsProcess().getAttempts() + 1);
-            order.setPayload(mappedPayload);
-            order.setStatus(fnsStatus.isSuccessful() ? OrderStatus.WAITING_EXTERNAL_STATUS : OrderStatus.PROCESSING);
-            order.setUpdatedAt(Instant.now());
-            order.addHistory(order.getStatus().name(), BusinessEventSource.EXTERNAL_API.value(), "FNS data mapped", Instant.now());
-
-            if (trafficProfile.mongoConflict(orderId, BusinessEventSource.HTTP_PROCESS.value())) {
-                throw new OptimisticLockingFailureException("Synthetic Mongo optimistic locking conflict for " + orderId);
-            }
-
-            trimHistory(order);
-            OrderDocument saved = repository.save(order);
-            eventPublisher.publishOrderStatusChanged(saved, BusinessEventSource.HTTP_PROCESS);
-            log.info("Order processing finished orderId={} status={} version={}", saved.getId(), saved.getStatus(), version(saved));
-            return new ProcessOrderResponse(saved.getId(), saved.getStatus().name(), "processed", version(saved));
+            ProcessOrderResponse response = locks.withOrder(id, () -> processLocked(id));
+            metrics.increment(
+                    response.outcome().equals("processed")
+                            ? "http_processed"
+                            : "http_expected_fault");
+            return response;
         } catch (RuntimeException ex) {
-            log.warn("Order processing failed orderId={} errorType={} message={}", orderId, ex.getClass().getSimpleName(), sanitize(ex.getMessage()));
-            OrderDocument failed = saveFailed(order, ex, BusinessEventSource.HTTP_PROCESS);
-            eventPublisher.publishOrderStatusChanged(failed, BusinessEventSource.HTTP_PROCESS_FAILED);
-            return new ProcessOrderResponse(failed.getId(), failed.getStatus().name(), sanitize(ex.getMessage()), version(failed));
+            metrics.increment("http_unexpected");
+            throw ex;
         }
     }
 
-    private OrderDocument saveFailed(OrderDocument order, RuntimeException ex, BusinessEventSource source) {
-        order.setStatus(OrderStatus.FAILED);
-        order.getFnsProcess().setFailMessage(sanitize(ex.getMessage()));
-        order.addHistory(OrderStatus.FAILED.name(), source.value(), sanitize(ex.getClass().getSimpleName() + ": " + ex.getMessage()), Instant.now());
+    public void retry(String id) {
+        locks.withOrder(
+                id,
+                () -> {
+                    var order = repository.findById(id).orElseThrow();
+                    if (order.getStatus() == OrderStatus.FAILED
+                            && order.getFnsProcess().getAttempts() < 3) {
+                        var result = processLocked(id);
+                        if (result.outcome().equals("expected_fault"))
+                            metrics.increment("scheduler_expected_fault");
+                    }
+                    return null;
+                });
+    }
+
+    private ProcessOrderResponse processLocked(String id) {
+        // Unseeded IDs are an invalid trace, never implicit extra data growth.
+        var order =
+                repository
+                        .findById(id)
+                        .orElseThrow(
+                                () -> new IllegalArgumentException("Order was not seeded: " + id));
+        order.getFnsProcess().setAttempts(order.getFnsProcess().getAttempts() + 1);
+        String outcome = "processed";
+        String message = "processed";
+        try {
+            var response =
+                    Objects.requireNonNull(
+                            externalApiClient.getFnsData(id), "Empty external response");
+            var status = FnsProcessStatus.fromExternal(response.externalStatus());
+            if (!status.isSuccessful())
+                throw new IllegalStateException("Unexpected FNS business status: " + status);
+            order.setPayload(mapper.mergeExternalFnsData(order, response));
+            order.getFnsProcess().setStatus(status);
+            order.getFnsProcess().setRegisteringFns(response.registeringFns());
+            order.getFnsProcess().setRegisteringFnsName(response.registeringFnsName());
+            order.getFnsProcess().setFailMessage(null);
+            order.setStatus(OrderStatus.WAITING_EXTERNAL_STATUS);
+            if (traffic.mongoConflict(id, BusinessEventSource.HTTP_PROCESS.value())) {
+                metrics.increment("mongo_expected_fault");
+                throw new SyntheticConflict();
+            }
+        } catch (ExpectedExternalFault | SyntheticConflict ex) {
+            outcome = "expected_fault";
+            message = ex.getMessage();
+            order.setStatus(OrderStatus.FAILED);
+            order.getFnsProcess().setFailMessage(message);
+        }
+        // Unexpected exceptions propagate as HTTP errors. Never save a stale failed document.
         order.setUpdatedAt(Instant.now());
-        trimHistory(order);
-        return repository.save(order);
+        order.addHistory(
+                order.getStatus().name(),
+                BusinessEventSource.HTTP_PROCESS.value(),
+                message,
+                Instant.now());
+        publisher.publishOrderStatusChanged(order, BusinessEventSource.HTTP_PROCESS);
+        var saved = repository.save(order);
+        metrics.increment("events_enqueued");
+        return new ProcessOrderResponse(
+                id, saved.getStatus().name(), message, saved.getVersion(), outcome);
     }
 
-    private void trimHistory(OrderDocument order) {
-        int maxHistoryItems = properties.flow().historyItems();
-        if (order.getHistory().size() <= maxHistoryItems) {
-            return;
+    private static class SyntheticConflict extends RuntimeException {
+        SyntheticConflict() {
+            super("Synthetic Mongo optimistic locking conflict");
         }
-        int fromIndex = order.getHistory().size() - maxHistoryItems;
-        order.setHistory(new ArrayList<>(order.getHistory().subList(fromIndex, order.getHistory().size())));
-    }
-
-    private String sanitize(String message) {
-        if (message == null || message.isBlank()) {
-            return "n/a";
-        }
-        return message.length() <= 500 ? message : message.substring(0, 500);
-    }
-
-    private long version(OrderDocument order) {
-        return order.getVersion() == null ? 0L : order.getVersion();
     }
 }

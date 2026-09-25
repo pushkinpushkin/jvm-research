@@ -9,6 +9,7 @@ services:
     image: jvm-research-sandbox:${JVM_VARIANT:-hotspot-liberica}
     cpus: "${CONTAINER_CPU_LIMIT:-2}"
     mem_limit: ${CONTAINER_MEMORY_LIMIT:-1g}
+    memswap_limit: ${CONTAINER_MEMORY_LIMIT:-1g}
     ports:
       - "${APP_PORT:-8080}:8080"
     environment:
@@ -19,13 +20,13 @@ services:
       MONGO_URI: mongodb://mongo:27017/jvm_research
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       EXTERNAL_API_BASE_URL: http://wiremock:8080
-      SANDBOX_PROFILE_ENABLED: "true"
-      SANDBOX_EXTERNAL_LONG_DELAY_PERCENT: "3"
-      SANDBOX_EXTERNAL_ERROR_PERCENT: "5"
-      SANDBOX_EXTERNAL_INVALID_PERCENT: "2"
-      SANDBOX_EXTERNAL_SLOW_PERCENT: "15"
-      SANDBOX_MONGO_CONFLICT_PERCENT: "2"
-      SANDBOX_KAFKA_DUPLICATE_PERCENT: "5"
+      SANDBOX_PROFILE_ENABLED: "${SANDBOX_PROFILE_ENABLED:-true}"
+      SANDBOX_EXTERNAL_LONG_DELAY_PERCENT: "${SANDBOX_EXTERNAL_LONG_DELAY_PERCENT:-0}"
+      SANDBOX_EXTERNAL_ERROR_PERCENT: "${SANDBOX_EXTERNAL_ERROR_PERCENT:-0}"
+      SANDBOX_EXTERNAL_INVALID_PERCENT: "${SANDBOX_EXTERNAL_INVALID_PERCENT:-0}"
+      SANDBOX_EXTERNAL_SLOW_PERCENT: "${SANDBOX_EXTERNAL_SLOW_PERCENT:-15}"
+      SANDBOX_MONGO_CONFLICT_PERCENT: "${SANDBOX_MONGO_CONFLICT_PERCENT:-0}"
+      SANDBOX_KAFKA_DUPLICATE_PERCENT: "${SANDBOX_KAFKA_DUPLICATE_PERCENT:-0}"
       RUN_ID: ${RUN_ID:-local}
       RUN_PROFILE: ${RUN_PROFILE:-local}
       JVM_VARIANT: ${JVM_VARIANT:-hotspot-liberica}
@@ -79,7 +80,7 @@ services:
       - "8089:8080"
     command:
       - --global-response-templating
-      - --verbose
+      - --max-request-journal-entries=1000
     volumes:
       - ./wiremock:/home/wiremock
 

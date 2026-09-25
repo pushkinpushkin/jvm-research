@@ -10,6 +10,17 @@ fi
 source scripts/profile-common.sh
 load_experiment_profile "$profile_file"
 
+TRAFFIC_PROFILE="${TRAFFIC_PROFILE:-normal}"
+case "$TRAFFIC_PROFILE" in normal|faults) ;; *) echo 'Unknown TRAFFIC_PROFILE' >&2; exit 1 ;; esac
+# Named traffic profiles are immutable within a series; runtime profiles remain overrideable.
+set -a
+source "profiles/traffic/${TRAFFIC_PROFILE}.env"
+set +a
+TRACE_SEED="${TRACE_SEED:-20260925}"
+RATE_TIME_UNIT="${RATE_TIME_UNIT:-1s}"
+DRAIN_TIMEOUT_SECONDS="${DRAIN_TIMEOUT_SECONDS:-300}"
+POST_IDLE_SECONDS="${POST_IDLE_SECONDS:-1800}"
+export TRAFFIC_PROFILE TRACE_SEED RATE_TIME_UNIT SLO_P95_MS SLO_P99_MS DRAIN_TIMEOUT_SECONDS POST_IDLE_SECONDS
 SCENARIO="${SCENARIO:-load}"
 case "$SCENARIO" in
   idle) RATE=0; SEED_ORDERS=0 ;;
@@ -71,6 +82,9 @@ if os.environ['SCENARIO'] != 'idle':
             raise SystemExit(f'{name} must be positive')
     if int(os.environ['SEED_ORDERS']) < int(os.environ['ORDER_POOL']):
         raise SystemExit('SEED_ORDERS must cover ORDER_POOL')
+for name in ['POST_IDLE_SECONDS', 'DRAIN_TIMEOUT_SECONDS']:
+    if int(os.environ[name]) < 0:
+        raise SystemExit(f'{name} must be nonnegative')
 for name in ['COLLECT_PROMETHEUS', 'SYNTHETIC_WARMUP', 'K6_TIME_SERIES']:
     if os.environ[name] not in ('true', 'false'):
         raise SystemExit(f'{name} must be true or false')
@@ -84,6 +98,9 @@ docker compose version >/dev/null
 mkdir -p "$RUN_RESULTS_DIR/app-logs"
 cp "$profile_file" "$RUN_RESULTS_DIR/profile.env"
 python3 scripts/experiment_support.py init "$RUN_RESULTS_DIR/metadata.json"
+python3 scripts/workload.py "$RUN_RESULTS_DIR"
+TRACE_FILE="$RUN_RESULTS_DIR/workload.json"
+export TRACE_FILE
 
 compose() { docker compose -f infra/docker-compose.yml "$@"; }
 collector_pid=''
@@ -112,6 +129,8 @@ cleanup() {
     compose down -v > "$RUN_RESULTS_DIR/cleanup.log" 2>&1 || { [[ "$code" -ne 0 ]] || code=1; }
   fi
   python3 scripts/experiment_support.py finish "$RUN_RESULTS_DIR/metadata.json" "$code" || true
+  python3 scripts/validate-run.py "$RUN_RESULTS_DIR" || { [[ "$code" -ne 0 ]] || code=2; }
+  python3 scripts/phase-report.py "$RUN_RESULTS_DIR" || { [[ "$code" -ne 0 ]] || code=2; }
   echo "Experiment results saved to $RUN_RESULTS_DIR (exit $code)"
   exit "$code"
 }
@@ -126,9 +145,23 @@ git diff HEAD --binary > "$RUN_RESULTS_DIR/source.diff"
 compose build sandbox-service > "$RUN_RESULTS_DIR/build.log" 2>&1
 compose_started=true
 compose up -d mongo kafka wiremock
+# Wait for actual dependencies, so startup is not dominated by Kafka/Mongo initialization.
+for attempt in $(seq 1 90); do
+  if compose exec -T mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1 \
+    && compose exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1 \
+    && curl --max-time 2 -fsS http://localhost:8089/__admin/mappings >/dev/null; then break; fi
+  [[ "$attempt" -lt 90 ]] || { echo 'Dependencies did not become ready' >&2; exit 1; }
+  sleep 2
+done
+python3 scripts/phase.py "$RUN_RESULTS_DIR" startup
+OBSERVATION_EPOCH="$(python3 -c 'import time; print(time.time())')"
+export OBSERVATION_EPOCH
 compose up -d --no-deps sandbox-service
 container_id="$(compose ps -q sandbox-service)"
 docker inspect "$container_id" > "$RUN_RESULTS_DIR/container-inspect.json"
+OUT="$RUN_RESULTS_DIR/runtime-metrics.csv" bash scripts/collect-runtime-metrics.sh --container "$container_id" \
+  > "$RUN_RESULTS_DIR/collector.log" 2>&1 &
+collector_pid=$!
 healthy=false
 health_deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
 while (( SECONDS < health_deadline )); do
@@ -143,16 +176,23 @@ done
 python3 scripts/experiment_support.py ready "$RUN_RESULTS_DIR/metadata.json" "$RUN_RESULTS_DIR/container-inspect.json"
 READY_EPOCH="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["readyEpoch"])' "$RUN_RESULTS_DIR/metadata.json")"
 export READY_EPOCH
-printf '%s\n' preparation > "$RUN_RESULTS_DIR/phase.txt"
-OUT="$RUN_RESULTS_DIR/runtime-metrics.csv" bash scripts/collect-runtime-metrics.sh --container "$container_id" \
-  > "$RUN_RESULTS_DIR/collector.log" 2>&1 &
-collector_pid=$!
+python3 scripts/phase.py "$RUN_RESULTS_DIR" preparation
+
 curl --max-time 10 -fsS "${BASE_URL}/run-info" > "$RUN_RESULTS_DIR/run-info.json"
 curl --max-time 10 -fsS "${BASE_URL}/actuator/prometheus" > "$RUN_RESULTS_DIR/prometheus-before.txt" || true
 if [[ "$SYNTHETIC_WARMUP" == true ]]; then
   curl --max-time 60 -fsS -X POST "${BASE_URL}/synthetic/runtime?iterations=20&payloadSize=100000" > "$RUN_RESULTS_DIR/synthetic-runtime.json"
 fi
-printf '%s\n' "$SCENARIO" > "$RUN_RESULTS_DIR/phase.txt"
+if [[ "$SCENARIO" != idle ]]; then
+  curl --max-time 300 -fsS -X POST "${BASE_URL}/orders/generate?count=${SEED_ORDERS}" > "$RUN_RESULTS_DIR/seed.json"
+  python3 - "$RUN_RESULTS_DIR/seed.json" "$SEED_ORDERS" <<'CHECK_SEED'
+import json,sys
+s=json.load(open(sys.argv[1]))
+assert s['saved'] == int(sys.argv[2]), s
+CHECK_SEED
+fi
+curl --max-time 10 -fsS "${BASE_URL}/research/state" > "$RUN_RESULTS_DIR/state-before.json"
+python3 scripts/phase.py "$RUN_RESULTS_DIR" "$SCENARIO"
 if [[ "$SCENARIO" == idle ]]; then
   sleep "$DURATION_SECONDS" &
 else
@@ -162,15 +202,44 @@ else
     > "$RUN_RESULTS_DIR/k6.log" 2>&1 &
 fi
 workload_pid=$!
+load_phase_finished=false
+load_deadline=$((SECONDS + $(python3 -c 'import math,sys; print(math.ceil(float(sys.argv[1])))' "$DURATION_SECONDS")))
 # Detect collector failures while the workload runs, including during idle.
 while kill -0 "$workload_pid" 2>/dev/null; do
+  if [[ "$SCENARIO" != idle && "$load_phase_finished" == false ]] && (( SECONDS >= load_deadline )); then
+    python3 scripts/phase.py "$RUN_RESULTS_DIR" drain
+    load_phase_finished=true
+  fi
   kill -0 "$collector_pid" 2>/dev/null || { echo 'Metric collector stopped unexpectedly; see collector.log' >&2; exit 1; }
   sleep 1
 done
 workload_code=0
 wait "$workload_pid" || workload_code=$?
 workload_pid=''
+if [[ "$SCENARIO" != idle ]]; then
+  if [[ "$load_phase_finished" == false ]]; then python3 scripts/phase.py "$RUN_RESULTS_DIR" drain; fi
+  drained=false
+  drain_deadline=$((SECONDS + DRAIN_TIMEOUT_SECONDS))
+  while (( SECONDS < drain_deadline )); do
+    kill -0 "$collector_pid" 2>/dev/null || { echo 'Collector failed during drain' >&2; exit 1; }
+    curl --max-time 10 -fsS "${BASE_URL}/research/state" > "$RUN_RESULTS_DIR/state-drain.json"
+    if python3 scripts/check-drained.py "$RUN_RESULTS_DIR/state-drain.json"; then drained=true; break; fi
+    sleep 2
+  done
+  [[ "$drained" == true ]] || { echo 'Background processing did not drain' >&2; exit 1; }
+  python3 scripts/phase.py "$RUN_RESULTS_DIR" post-load-idle
+  idle_deadline=$((SECONDS + POST_IDLE_SECONDS))
+  while (( SECONDS < idle_deadline )); do
+    kill -0 "$collector_pid" 2>/dev/null || { echo 'Collector failed during post-load idle' >&2; exit 1; }
+    sleep 1
+  done
+fi
+curl --max-time 10 -fsS "${BASE_URL}/research/state" > "$RUN_RESULTS_DIR/state-after.json"
+compose exec -T kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server kafka:9092 \
+  --group jvm-research-sandbox --describe > "$RUN_RESULTS_DIR/kafka-lag.txt"
+docker inspect "$container_id" > "$RUN_RESULTS_DIR/container-final.json"
 stop_collector
+python3 scripts/phase.py "$RUN_RESULTS_DIR" finished
 [[ "$SCENARIO" == idle ]] || cat "$RUN_RESULTS_DIR/k6.log"
 curl --max-time 10 -fsS "${BASE_URL}/actuator/prometheus" > "$RUN_RESULTS_DIR/prometheus-after.txt" || true
 docker stats --no-stream "$container_id" > "$RUN_RESULTS_DIR/docker-stats.txt" || true

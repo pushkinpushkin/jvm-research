@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-profile="${1:-profiles/work-hotspot-fixed.env}"
+profile="${1:-profiles/work-hotspot-elastic.env}"
 root="${RESULTS_ROOT:-results/verification/$(date -u +%Y%m%dT%H%M%SZ)-$$}"
-SCENARIO=idle DURATION=10s RESULTS_ROOT="$root/idle" bash scripts/run-experiment.sh "$profile"
-SCENARIO=load RATE=1 DURATION=1m ORDER_POOL=100 SEED_ORDERS=100 RESULTS_ROOT="$root/load" \
+SCENARIO=idle DURATION=15s RESULTS_ROOT="$root/idle" bash scripts/run-experiment.sh "$profile"
+POST_IDLE_SECONDS=20 SCENARIO=load RATE=1 DURATION=1m ORDER_POOL=100 SEED_ORDERS=100 RESULTS_ROOT="$root/load" \
   bash scripts/run-experiment.sh "$profile"
 python3 - "$root" <<'PY'
 import csv, json, sys
@@ -13,7 +13,7 @@ root = Path(sys.argv[1])
 for metadata in root.rglob('metadata.json'):
     run = metadata.parent
     meta = json.loads(metadata.read_text())
-    assert meta['status'] == 'completed', meta
+    assert meta['comparisonEligible'] is True, json.loads((run/'validation.json').read_text())
     with (run / 'runtime-metrics.csv').open() as f:
         samples = list(csv.DictReader(f))
     assert samples and all(float(x['memory_used_bytes']) > 0 for x in samples)

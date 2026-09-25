@@ -22,7 +22,7 @@ def memory_points(run):
     result = []
     with path.open(newline='') as handle:
         for row in csv.DictReader(handle):
-            t = finite_number(row.get('elapsed_seconds'))
+            t = finite_number(row.get('phase_elapsed_seconds') or row.get('elapsed_seconds'))
             m = finite_number(row.get('memory_used_bytes'))
             if t is None or m is None or t < 0:
                 continue
@@ -80,7 +80,9 @@ def group_key(meta):
         'prometheus': meta.get('prometheusSampling'),
         'synthetic': meta.get('syntheticWarmup'),
         'preallocatedVUs': load.get('preallocatedVUs'), 'maxVUs': load.get('maxVUs'),
-        'sleepSeconds': load.get('sleepSeconds')}.items() if value is not None}
+        'sleepSeconds': load.get('sleepSeconds'), 'workloadSha256':meta.get('workloadSha256'),
+        'trafficProfile':meta.get('trafficProfile'), 'observedWork':meta.get('observedWork'), 'host':meta.get('host'),
+        'rateTimeUnit':meta.get('rateTimeUnit'), 'postIdleSeconds':meta.get('postIdleSeconds')}.items() if value is not None}
 
 
 def build_dataset(runs, rows):
@@ -91,7 +93,7 @@ def build_dataset(runs, rows):
         report.append({'name': run.name, 'runtime': row['runtime'], 'scenario': row['scenario'],
                        'memoryProfile': row['memory_profile'], 'status': row['status'],
                        'config': group_key(meta),
-                       'memory': memory_points(run), 'latency': latency_windows(run),
+                       'memory': [x for x in memory_points(run) if meta.get('schemaVersion',0)<3 or x.get('phase')==meta.get('scenario')], 'latency': latency_windows(run),
                        'metrics': {key: finite_number(row.get(key)) for key in [
                            'startup_s', 'memory_avg_mib', 'memory_p95_mib', 'memory_peak_mib',
                            'p95_ms', 'p99_ms', 'failure_pct', 'requests']}})
