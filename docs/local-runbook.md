@@ -154,3 +154,31 @@ curl http://localhost:8080/orders/order-1
 экспериментами остановите его, чтобы освободить порты.
 Docker Desktop измеряет Linux VM, не RSS приложения в macOS. Для переноса выводов в
 Kubernetes повторите замеры на репрезентативном Linux node.
+
+## Протокол v1 и проверка пригодности
+
+Актуальные условия: [RESEARCH_PROTOCOL.md](../RESEARCH_PROTOCOL.md). Основная серия использует elastic heap.
+
+```bash
+# Сначала короткая интеграционная проверка (новый изолированный compose project на каждый запуск).
+bash scripts/smoke-runtime.sh profiles/work-hotspot-elastic.env
+
+# Главный сценарий: 30 минут low-load + drain + 30 минут простоя.
+SCENARIO=low-load RATE=1 RATE_TIME_UNIT=1s DURATION=30m \
+ORDER_POOL=1000 SEED_ORDERS=1000 TRAFFIC_PROFILE=normal TRACE_SEED=20260925 \
+POST_IDLE_SECONDS=1800 RESULTS_ROOT=results/reference/low-load \
+bash scripts/run-experiment.sh profiles/work-hotspot-elastic.env
+
+# Отдельная проверка устойчивости, не смешивать с normal.
+SCENARIO=load RATE=10 DURATION=3m ORDER_POOL=1000 SEED_ORDERS=1000 \
+TRAFFIC_PROFILE=faults POST_IDLE_SECONDS=30 RESULTS_ROOT=results/verification/faults \
+bash scripts/run-experiment.sh profiles/work-hotspot-elastic.env
+
+# Повторная проверка имеющихся артефактов.
+python3 scripts/validate-run.py results/path/to/run
+python3 scripts/phase-report.py results/path/to/run
+```
+
+Остальные профили: `work-openj9-elastic`, `work-graalvm-elastic`, `work-graalvm-native`.
+Для редких запросов: `RATE=1 RATE_TIME_UNIT=10s`. Fresh idle: `SCENARIO=idle DURATION=30m`.
+Запуск с неизвестными/недостающими метриками отклоняется; код 2 означает отказ валидатора при успешном процессе. `validation.json` содержит причины, `phase-summary.json` — раздельные расчёты. Старые результаты без валидации не отображаются как допущенные серии.

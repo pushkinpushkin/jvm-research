@@ -16,14 +16,28 @@ jobs:
           java-version: '21'
       - run: python3 -m unittest discover -s scripts/tests -v
       - run: ./gradlew --no-daemon test bootJar
+  fault-mappings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f infra/docker-compose.yml up -d wiremock
+      - run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8089/__admin/mappings >/dev/null && break
+            sleep 1
+          done
+          python3 scripts/check-wiremock.py
+      - if: always()
+        run: docker compose -f infra/docker-compose.yml down -v
   smoke:
-    needs: tests
+    needs: [tests, fault-mappings]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        profile: [work-hotspot-fixed, work-openj9-fixed, work-graalvm-fixed, work-graalvm-native]
+        profile: [work-hotspot-elastic, work-openj9-elastic, work-graalvm-elastic, work-graalvm-native]
     steps:
       - uses: actions/checkout@v4
       - uses: grafana/setup-k6-action@v1
@@ -33,6 +47,17 @@ jobs:
         env:
           RESULTS_ROOT: results/verification
         run: bash scripts/smoke-runtime.sh profiles/${{ matrix.profile }}.env
+      - name: Deterministic fault profile and async drain
+        env:
+          RESULTS_ROOT: results/verification/faults
+          SCENARIO: load
+          TRAFFIC_PROFILE: faults
+          RATE: '2'
+          DURATION: 1m
+          ORDER_POOL: '100'
+          SEED_ORDERS: '100'
+          POST_IDLE_SECONDS: '20'
+        run: bash scripts/run-experiment.sh profiles/${{ matrix.profile }}.env
       - uses: actions/upload-artifact@v4
         if: always()
         with:
