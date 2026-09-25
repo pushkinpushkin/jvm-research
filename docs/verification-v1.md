@@ -28,13 +28,12 @@
 
 ## Что ещё проверять на исследовательском стенде
 
-1. Итог повторного Docker smoke фиксируется в [CURRENT_STATE.md](../CURRENT_STATE.md).
-2. Длительная серия `TRAFFIC_PROFILE=faults` и баланс после drain.
-3. HotSpot pilot 10–30 минут → stability 1–3 часа → корректный HotSpot baseline; затем остальные runtime, минимум 3 повтора по протоколу.
-4. Влияние сборщика на слабонагруженный сервис: сравнить одинаковую работу с интервалами 5 и 15 секунд. Docker exec и HTTP telemetry имеют ненулевой overhead.
-5. Проверить конкретные image IDs, хост и фактический GC; фиксировать образы до эталонных запусков.
+1. Длительная серия `TRAFFIC_PROFILE=faults` и баланс после drain.
+2. HotSpot pilot 10–30 минут → stability 1–3 часа → корректный HotSpot baseline; затем остальные runtime, минимум 3 повтора по протоколу.
+3. Влияние сборщика на слабонагруженный сервис: сравнить одинаковую работу с интервалами 5 и 15 секунд. Docker exec и HTTP telemetry имеют ненулевой overhead.
+4. Проверить конкретные image IDs, хост и фактический GC; фиксировать образы до эталонных запусков.
 
-Локальная среда разработки не содержит Docker daemon; тесты с mock-артефактами не заменяют этот пункт. До успешных Docker и длительных проверок нельзя считать стенд полностью готовым к эталонным данным.
+Локальная среда разработки не содержит Docker daemon; Docker-проверки выполнены в CI. Их успех подтверждает короткий интеграционный цикл. До pilot и stability нельзя считать стенд готовым к эталонным данным.
 
 ## Реальные raw-данные: независимый пересчёт
 
@@ -65,3 +64,9 @@ CI [36148875277](https://github.com/pushkinpushkin/jvm-research/actions/runs/361
 - `prometheus/00000010.474.prom`: heap used pools 3258624 + 1078464 + 36106912 = **40444000 bytes**, совпадает с соответствующим runtime sample отчёта.
 
 После исправления endpoint tick локально прошли **19 Python tests**; отдельно выполнен JS guard на planned request, endpoint no-op и index за endpoint. Повторные Docker/Java результаты — в актуальном checkpoint; эта запись не подменяет длительную проверку стабильности.
+
+## Итог Docker CI
+
+[Runtime smoke 36193573959](https://github.com/pushkinpushkin/jvm-research/actions/runs/36193573959), commit `e9388c55cc44d3afa7ec5b5ea2ba174019596640`: **success**, 6/6 jobs. Java/Python tests и WireMock checks успешны; HotSpot, OpenJ9, GraalVM JIT и GraalVM Native прошли каждый idle, normal load, faults + drain — **12/12 runs eligible=true**. Native executable собран и исполнил Mongo/Kafka/внешние вызовы/фоновые задачи. Во всех fault-прогонах admission подтвердил ожидаемые исходы и завершение async обработки.
+
+Endpoint no-op проверен в реальном k6: skips=0 и skips=1 встречаются в успешных runs, лишних HTTP-запросов нет. Последующие commits меняют только документацию и checkpoint; runtime-код совпадает с указанным CI commit. Длительная стабильность и сравнительный результат JVM этим не установлены.

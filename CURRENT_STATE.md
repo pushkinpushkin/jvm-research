@@ -2,7 +2,7 @@
 
 ## Где мы сейчас
 
-Этап: закрытие корректности стенда (пункты 1–5), затем HotSpot pilot. PR [#8](https://github.com/pushkinpushkin/jvm-research/pull/8), ветка `feat/reproducible-research`; PR остаётся draft, merge не выполнялся. Длительная стабильность и сравнительные выводы ещё не доказаны.
+Этап: реализация и короткие интеграционные проверки пунктов 1–5 завершены; далее HotSpot pilot. PR [#8](https://github.com/pushkinpushkin/jvm-research/pull/8), ветка `feat/reproducible-research`; PR остаётся draft, merge не выполнялся. Длительная стабильность и сравнительные выводы ещё не доказаны.
 
 Реализация: `d83cff13a1c50eb651b1f3248a536ca44c3a2198`; исправление конечного tick k6: `e9388c55cc44d3afa7ec5b5ea2ba174019596640`.
 
@@ -14,9 +14,9 @@
 
 Локально: 14 Java tests и bootJar, 10 живых HTTP-проверок WireMock; после endpoint fix — 19 Python tests, включая строгую проверку boundary skip, недостающей и лишней работы. Исполнение JS guard проверено на обычном index, одном endpoint no-op и недопустимом следующем index.
 
-Первый CI [36148875277](https://github.com/pushkinpushkin/jvm-research/actions/runs/36148875277): Java/Python и WireMock успешны; все четыре runtime собраны и запущены, включая Native. Idle успешен; normal load HotSpot/OpenJ9 прошёл. В остальных load/fault шагах k6 иногда создавал дополнительную итерацию ровно на конечной границе: фактические бизнес-запросы корректны, но trace exhaustion отклонял run. Это дефект harness, не доказательство проблемы runtime.
+CI [36193573959](https://github.com/pushkinpushkin/jvm-research/actions/runs/36193573959) для `e9388c55cc44d3afa7ec5b5ea2ba174019596640`: **success**, все 6 jobs. Java/Python tests, bootJar и 10 WireMock mappings успешны. Все четыре runtime, включая сборку Native executable, прошли idle, normal load и faults + async drain: **12 smoke-прогонов, у каждого eligible=true**. Это короткие функциональные проверки, не baseline.
 
-Повторный CI [36193573959](https://github.com/pushkinpushkin/jvm-research/actions/runs/36193573959) для `e9388c5`: Java/Python и WireMock успешны. HotSpot, OpenJ9 и GraalVM JIT прошли все три smoke-сценария с eligible=true; Native ещё выполняется. Endpoint no-op проверен в реальном k6 как при skips=0, так и при skips=1. До подтверждения Native нельзя объявлять весь gate закрытым.
+CI выявил и подтвердил исправление endpoint tick k6: один no-op при index=trace.length учитывается отдельно, HTTP-count остаётся точным. Реальные k6 прогоны проверили оба случая skips=0/1; недостающая и лишняя работа отклоняются regression tests. После указанного проверенного commit изменялись только документы (`[skip ci]`); повторная сборка неизменного кода не требуется.
 
 На реальном HotSpot smoke независимо сверены 12 cgroup samples, time-weighted memory, CPU delta и heap pool sum; совпали с отчётом. Входные числа, формулы и run ID: [docs/verification-v1.md](docs/verification-v1.md).
 
@@ -26,4 +26,4 @@
 
 ## Следующий шаг
 
-Закрыть повторный smoke и сверить реальные raw-агрегаты. Затем одна отдельная цель: HotSpot pilot на выбранном хосте с бюджетом 2 CPU/1 GiB. Полная матрица откладывается до корректного HotSpot baseline. Для продолжения читать этот файл и `RESEARCH_PROTOCOL.md`; историю переписки и полные логи повторно не загружать.
+Одна отдельная цель: HotSpot pilot 10–30 минут на выбранном фиксированном хосте с бюджетом 2 CPU/1 GiB; проверить instrumentation, полноту данных и variance. Полная матрица откладывается до корректного HotSpot baseline. Для продолжения читать этот файл и `RESEARCH_PROTOCOL.md`; историю переписки и полные логи повторно не загружать.
