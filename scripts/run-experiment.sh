@@ -145,6 +145,8 @@ git diff HEAD --binary > "$RUN_RESULTS_DIR/source.diff"
 compose build sandbox-service > "$RUN_RESULTS_DIR/build.log" 2>&1
 compose_started=true
 compose up -d mongo kafka wiremock
+python3 scripts/experiment_support.py image-digests "$RUN_RESULTS_DIR/metadata.json" "$RUN_RESULTS_DIR/image-digests.json" \
+  "$RUNTIME_IMAGE" "${NATIVE_BUILDER_IMAGE:-}" "mongo:7.0" "apache/kafka:3.7.1" "wiremock/wiremock:3.9.1"
 # Wait for actual dependencies, so startup is not dominated by Kafka/Mongo initialization.
 for attempt in $(seq 1 90); do
   if compose exec -T mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1 \

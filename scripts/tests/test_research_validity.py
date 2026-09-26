@@ -104,3 +104,18 @@ class AdmissionTests(unittest.TestCase):
         self.assertNotIn('1200-1800s',result['phases']['load']['windows'])
         self.assertEqual(100, result['phases']['load']['whole']['memory_used_bytes']['timeWeightedMean'])
         self.assertEqual(10000,result['phases']['load']['whole']['cpu_usage_usec_delta'])
+
+    def test_three_hour_windows_and_trailing_slope(self):
+        rows=[]
+        for t in range(0,10801,1800):
+            rows.append(dict(phase='load',elapsed_seconds=t,phase_elapsed_seconds=t,memory_used_bytes=100 + 2*t,
+                memory_current_bytes=150 + 2*t,memory_peak_bytes=200 + 2*t,cpu_usage_usec=t*1000,
+                cpu_throttled_usec=0,cpu_nr_throttled=0,cpu_nr_periods=t,oom=0,oom_kill=0,memory_swap_bytes=0))
+        with (self.run/'runtime-metrics.csv').open('w') as f:
+            writer=csv.DictWriter(f,fieldnames=rows[0]);writer.writeheader();writer.writerows(rows)
+        result=report.report(self.run)
+        windows=result['phases']['load']['windows']
+        for name in ('3600-7200s','7200-10800s','0-1h','1-2h','2-3h'):
+            self.assertIn(name,windows)
+        self.assertEqual(2,result['phases']['load']['trends']['last60m']['slopeBytesPerSecond'])
+        self.assertEqual(3600,result['phases']['load']['trends']['last60m']['observedSeconds'])

@@ -34,3 +34,10 @@
 Причина: экономить повторное чтение, сохраняя проверку гипотез и воспроизводимость.
 Контроль: доказательства с commit/run ID, актуальный backlog, повторный аудит только по релевантному изменению. Smoke всех runtime остаётся функциональной проверкой.
 Дата: 2026-09-25.
+
+## D-006: Kafka lag admission берётся из Kafka CLI
+
+Решение: обязательный lag для admission — `kafka-consumer-groups --describe` в `kafka-lag.txt`; Prometheus Kafka lag labels остаются дополнительной telemetry и не участвуют в допуске.
+Причина: набор Prometheus labels для Kafka lag зависит от экспортера/версии и может предупреждать об отсутствующих или несовпадающих labels, тогда как CLI показывает фактический lag consumer group по двум topics стенда.
+Контроль: валидатор fail-closed требует строки по `order.status.changed` и `business.event.occurred`, числовой lag и сумму 0; отсутствие Prometheus lag labels не означает нулевой lag.
+Дата: 2026-09-26.

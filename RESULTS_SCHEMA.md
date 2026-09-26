@@ -7,6 +7,7 @@
 | Файл | Назначение / источник |
 |---|---|
 | `metadata.json` | Manifest: schemaVersion=3, runId, gitSha/dirty, runtime/profile/image, флаги, host/system, лимиты, сценарий, rate/duration, seed/pool, sampling, trace SHA, SLO, времена, exitCode, comparisonEligible, observedWork |
+| `image-digests.json` | `docker image inspect` для runtime/base images и зависимостей MongoDB/Kafka/WireMock; те же данные продублированы в manifest как `imageDigests` |
 | `run-info.json` | Фактическая конфигурация работающего runtime, `/run-info` |
 | `container-inspect.json`, `container-final.json` | Docker image/container ID, лимиты, время старта, рестарты/OOM/состояние |
 | `workload.json` | Seed, детерминированная последовательность ID/режимов/ожидаемых результатов |
@@ -16,10 +17,10 @@
 | `runtime-metrics.csv` | Наблюдаемые отсчёты cgroup с elapsed/phase/phase_elapsed |
 | `cgroup/`, `prometheus/`, `state/` | Сырые cgroup, Prometheus и прикладное состояние, привязанные ко времени |
 | `k6-summary.json`, опциональная серия k6 | HTTP/бизнес-счётчики и latency без seed |
-| `state-before.json`, `state-after.json`, `kafka-lag.txt` | Прикладной баланс и завершение фоновой работы; lag двух topics |
+| `state-before.json`, `state-after.json`, `kafka-lag.txt` | Прикладной баланс и завершение фоновой работы; lag двух topics из Kafka consumer-groups CLI |
 | Логи приложения, k6 и инфраструктуры | Диагностика конкретной причины отклонения |
 
-Manifest уже формируется автоматически; не восстанавливай настройки по shell history. Для воспроизводимого baseline дополнительно архивировать версии Docker, ОС/ядро хоста и immutable digests всех зависимостей: текущий manifest сам по себе не фиксирует весь стенд.
+Manifest уже формируется автоматически; не восстанавливай настройки по shell history. Для воспроизводимого baseline дополнительно архивировать версии Docker, ОС/ядро хоста и immutable digests всех зависимостей; runner фиксирует доступные Docker image IDs / repo digests в `image-digests.json`, но это не заменяет закрепление исследовательского хоста.
 
 ## Величины и формулы
 
@@ -42,15 +43,15 @@ Manifest уже формируется автоматически; не восс
 
 Startup: Docker StartedAt → первый health UP, polling 250 мс после готовности зависимостей. Preparation и seed отдельно. В основной методике нет скрытого отбрасывания прогрева: вся load-latency входит в SLO; память показывается по временным окнам. Дополнительный steady-state анализ требует заранее записанного окна и не заменяет общую latency. Fresh idle не выполняет synthetic warmup.
 
-Sampling по умолчанию 5 секунд. Для каждой фазы: whole и окна 0–60, 60–300, 300–600, 600–1200, 1200–1800, 1800–3600 секунд относительно её начала. В окно входят фактически измеренные точки; `observedSeconds` — расстояние между первой и последней, не обещанная длительность. Вне наблюдения нет экстраполяции; одноточечное окно не даёт timeWeightedMean.
+Sampling по умолчанию 5 секунд. Для каждой фазы: whole и окна 0–60, 60–300, 300–600, 600–1200, 1200–1800, 1800–3600, 3600–7200, 7200–10800 секунд относительно её начала; дополнительно для длинных прогонов есть часовые окна `0-1h`, `1-2h`, `2-3h`. В окно входят фактически измеренные точки; `observedSeconds` — расстояние между первой и последней, не обещанная длительность. Вне наблюдения нет экстраполяции; одноточечное окно не даёт timeWeightedMean.
 
-Средняя память = Σ[(vᵢ+vᵢ₊₁)/2 × (tᵢ₊₁−tᵢ)] / (t_last−t_first). `sampleMedian` и `sampleMax` относятся к наблюдаемым точкам, а не всему непрерывному процессу. CPU/throttling в окне — последний накопленный счётчик минус первый. `lifetimeCgroupPeakBytesAtWindowEnd` — полный пик с запуска cgroup; его нельзя интерпретировать как фазовый working-set peak. Короткие startup spikes могут быть пропущены sampling.
+Средняя память = Σ[(vᵢ+vᵢ₊₁)/2 × (tᵢ₊₁−tᵢ)] / (t_last−t_first). `sampleMedian` и `sampleMax` относятся к наблюдаемым точкам, а не всему непрерывному процессу. CPU/throttling в окне — последний накопленный счётчик минус первый. `lifetimeCgroupPeakBytesAtWindowEnd` — полный пик с запуска cgroup; его нельзя интерпретировать как фазовый working-set peak. `phases.<phase>.trends.last60m/last90m.slopeBytesPerSecond` — линейная регрессия working set по фактически наблюдаемым точкам в конце фазы; `observedSeconds` показывает покрытие и не экстраполируется до полного окна. Короткие startup spikes могут быть пропущены sampling.
 
 ## Ошибки и admission
 
 HTTP error rate, `business_processed`, `expected_faults`, `unexpected_results`, scheduler/consumer/outbox errors учитываются отдельно. `iterations = expectedIterations + trace_boundary_skips`, skips ∈ {0,1}; `http_reqs = business_requests = expectedIterations`; dropped=0. Boundary skip возможен только для index=trace.length и не выполняет HTTP. Искусственные отказы не дают права игнорировать неожиданные исключения.
 
-Validator проверяет trace SHA, профиль/лимиты, порядок фаз и покрытие данными, точные counts/режимы/SLO, границы состояния, прикладной баланс, пустой outbox, lag, OOM/swap/restarts и полноту telemetry. Ненулевой exit или отсутствующие обязательные данные отклоняют запуск. Успех k6 недостаточен. Возможность отсутствующих JVM-метрик Native не распространяется на обязательные cgroup/HTTP/async данные.
+Validator проверяет trace SHA, профиль/лимиты, порядок фаз и покрытие данными, точные counts/режимы/SLO, границы состояния, прикладной баланс, пустой outbox, lag из `kafka-consumer-groups --describe`, OOM/swap/restarts и полноту telemetry. Prometheus Kafka lag labels не являются admission-источником: их отсутствие или нестабильный набор labels не интерпретируется как нулевой lag. Ненулевой exit или отсутствующие обязательные данные отклоняют запуск. Успех k6 недостаточен. Возможность отсутствующих JVM-метрик Native не распространяется на обязательные cgroup/HTTP/async данные.
 
 ## Сравнение и доказательства
 

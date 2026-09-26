@@ -8,10 +8,62 @@ import re
 import statistics
 import sys
 
+WINDOWS = [
+    ('0-60s', 0, 60),
+    ('60-300s', 60, 300),
+    ('300-600s', 300, 600),
+    ('600-1200s', 600, 1200),
+    ('1200-1800s', 1200, 1800),
+    ('1800-3600s', 1800, 3600),
+    ('3600-7200s', 3600, 7200),
+    ('7200-10800s', 7200, 10800),
+    ('0-1h', 0, 3600),
+    ('1-2h', 3600, 7200),
+    ('2-3h', 7200, 10800),
+]
+
+TREND_WINDOWS_SECONDS = {
+    'last60m': 60 * 60,
+    'last90m': 90 * 60,
+}
+
 
 def weighted_mean(points):
     duration = sum(b[0]-a[0] for a,b in zip(points,points[1:]))
     return sum((b[0]-a[0])*(a[1]+b[1])/2 for a,b in zip(points,points[1:]))/duration if duration else None
+
+
+def linear_slope(points):
+    if len(points) < 2:
+        return None
+    origin = points[0][0]
+    xs = [x - origin for x,_ in points]
+    ys = [y for _,y in points]
+    mean_x = statistics.mean(xs)
+    mean_y = statistics.mean(ys)
+    denominator = sum((x - mean_x) ** 2 for x in xs)
+    if denominator == 0:
+        return None
+    return sum((x - mean_x) * (y - mean_y) for x,y in zip(xs,ys)) / denominator
+
+
+def summarize_trends(samples):
+    result = {}
+    if not samples:
+        return result
+    last = float(samples[-1]['phase_elapsed_seconds'])
+    for label, duration in TREND_WINDOWS_SECONDS.items():
+        subset = [x for x in samples if float(x['phase_elapsed_seconds']) >= last - duration and x.get('memory_used_bytes')]
+        points = [(float(x['phase_elapsed_seconds']), float(x['memory_used_bytes'])) for x in subset]
+        if len(points) < 2:
+            continue
+        result[label] = {
+            'metric': 'memory_used_bytes',
+            'slopeBytesPerSecond': linear_slope(points),
+            'observedSeconds': points[-1][0] - points[0][0],
+            'samples': len(points),
+        }
+    return result
 
 
 def summarize_samples(samples):
@@ -59,10 +111,10 @@ def report(run):
     for phase in dict.fromkeys(x['phase'] for x in samples):
         selected = [x for x in samples if x['phase']==phase]
         windows = {}
-        for start,end in [(0,60),(60,300),(300,600),(600,1200),(1200,1800),(1800,3600)]:
+        for label,start,end in WINDOWS:
             subset = [x for x in selected if start <= float(x['phase_elapsed_seconds']) <= end]
-            if subset: windows[f'{start}-{end}s'] = summarize_samples(subset)
-        result['phases'][phase] = dict(whole=summarize_samples(selected), windows=windows)
+            if subset: windows[label] = summarize_samples(subset)
+        result['phases'][phase] = dict(whole=summarize_samples(selected), windows=windows, trends=summarize_trends(selected))
     result['runtimeSamples'] = []
     for path in sorted((run/'prometheus').glob('*.prom')):
         elapsed = float(path.stem)
