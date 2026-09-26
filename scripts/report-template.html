@@ -36,10 +36,10 @@ footer{font-size:12px;color:var(--muted);line-height:1.7;margin:23px 0 0}
 <div class="controls"><div><label class="caption" for="group">Сопоставимые условия</label><select id="group"></select></div></div>
 <div class="statstrip"><div class="stat"><strong id="count">—</strong><small>запусков</small></div><div class="stat"><strong id="variants">—</strong><small>runtime</small></div><div class="stat"><strong id="window">—</strong><small>заданная длительность</small></div><div class="stat"><strong id="limits">—</strong><small>лимит приложения</small></div></div>
 <div id="notice" class="note"></div>
-<div class="card"><h2>Память во времени</h2><p>Docker working set, МиБ · отсчёт от readiness · полный контейнер, включая runtime. Короткие smoke запуски не показывают стабилизацию.</p><div id="legend" class="series-list"></div><div id="memory" class="graph"></div></div>
-<div class="card"><h2>CPU во времени</h2><p>Docker CPU % · 100% соответствует одному полностью загруженному ядру.</p><div id="cpu" class="graph"></div></div>
-<div class="comparison"><div class="card"><h2>Пиковая память</h2><p>Максимальная измеренная точка, МиБ. Краткие пики между выборками могут не попасть в ряд.</p><div id="peak"></div></div><div class="card"><h2>Запуск до readiness</h2><p>Время от старта контейнера, секунды. Сборка образа не включена.</p><div id="startup"></div></div><div class="card"><h2>HTTP p95 за весь прогон</h2><p>Время ответа, мс. Для idle отсутствует по смыслу.</p><div id="p95"></div></div></div>
-<div id="latency-card" class="card"><h2>HTTP p95 по минутам</h2><p>Доступно при K6_TIME_SERIES=true. Отсчёт от первого HTTP-запроса k6 (включая seed), число запросов в окне видно при наведении.</p><div id="latency" class="graph"></div></div>
+<div class="card"><h2>Память во времени</h2><p>Docker working set, МиБ · отсчёт от начала измеряемой фазы · полный контейнер, включая runtime. Короткие smoke запуски не показывают стабилизацию.</p><div id="legend" class="series-list"></div><div id="memory" class="graph"></div></div>
+<div class="card"><h2>CPU во времени</h2><p>CPU % из cgroup CPU time · 100% соответствует одному полностью загруженному ядру.</p><div id="cpu" class="graph"></div></div>
+<div class="comparison"><div class="card"><h2>Пиковая память</h2><p>Максимальная измеренная точка, МиБ. Краткие пики между выборками могут не попасть в ряд.</p><div id="peak"></div></div><div class="card"><h2>Запуск до readiness</h2><p>Время от старта контейнера, секунды. Сборка образа не включена.</p><div id="startup"></div></div><div class="card"><h2>Бизнес HTTP p95</h2><p>Время ответа, мс. Для idle отсутствует по смыслу.</p><div id="p95"></div></div></div>
+<div id="latency-card" class="card"><h2>HTTP p95 по минутам</h2><p>Доступно при K6_TIME_SERIES=true. Отсчёт от первого бизнес-запроса k6; seed исключён, число запросов в окне видно при наведении.</p><div id="latency" class="graph"></div></div>
 <footer>Выбирайте условия вверху и включайте отдельные линии. Разные memory profile подписаны отдельно: fixed heap, elastic heap и native default имеют разные настройки heap. Для итоговых выводов сравнивайте также ошибки, фактическое число запросов и повторы. Источник данных — metadata.json, runtime-metrics.csv и k6-summary.json; при наличии — k6-timeseries.json. График не заменяет исходные файлы.</footer>
 </main>
 <script type="application/json" id="report-data">__REPORT_DATA__</script>
@@ -73,7 +73,7 @@ function lineChart(id,metric,unit,series,opts={}){
   const svg=node('svg',{viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':unit==='МиБ'?'График памяти контейнера':`График ${unit}`});target.appendChild(svg);
   for(let i=0;i<=4;i++){let v=ymin+(ymax-ymin)*i/4,y=Y(v);node('line',{x1:L,y1:y,x2:L+w,y2:y,class:'grid'},svg);text(svg,L-10,y+4,fmt(v,v>=100?0:1),'axis','end')}
   for(let i=0;i<=5;i++){let x=L+w*i/5;node('line',{x1:x,y1:T,x2:x,y2:T+h,class:'grid'},svg);text(svg,x,T+h+23,fmt(xmax*i/5,1),'axis','middle')}
-  text(svg,L+w/2,H-3,opts.minutes?'Минуты от первого запроса k6':'Минуты после readiness','axis','middle');text(svg,8,14,unit);
+  text(svg,L+w/2,H-3,opts.minutes?'Минуты от первого запроса k6':'Минуты от начала измеряемой фазы','axis','middle');text(svg,8,14,unit);
   const tooltip=document.createElement('div');tooltip.className='tooltip';tooltip.hidden=true;target.appendChild(tooltip);
   for(const item of valid){const ordered=[...item.points].sort((a,b)=>a.t-b.t);
     node('path',{d:ordered.map((p,i)=>`${i?'L':'M'}${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' '),stroke:color(item.run),class:'chart-line','stroke-dasharray':item.run.memoryProfile==='elastic-heap'?'8 5':'none'},svg);
@@ -92,12 +92,12 @@ function bars(id,key,unit){const host=$(id);host.replaceChildren();const subset=
     const value=document.createElement('span');value.className='bar-value';value.textContent=`${fmt(run.metrics[key],1)} ${unit}`;
     row.append(name,track,value);host.appendChild(row)}
 }
-function draw(){activeRuns=groups.get(choices[Number($('group').value)][0]).filter(r=>!excluded.has(r.name));const base=groups.get(choices[Number($('group').value)][0]);const c=base[0].config;
+function draw(){activeRuns=groups.get(choices[Number($('group').value)][0]).filter(r=>!excluded.has(r.name) && r.status==='eligible');const base=groups.get(choices[Number($('group').value)][0]);const c=base[0].config;
   $('count').textContent=fmt(base.length,0);$('variants').textContent=fmt(new Set(base.map(r=>r.runtime)).size,0);$('window').textContent=c.duration||'разная';$('limits').textContent=`${c.cpu||'?'} CPU / ${c.memoryLimit||'?'}`;
   const profiles=new Set(base.map(r=>r.memoryProfile));const warnings=[];
   if(base.length<2)warnings.push('Пока есть один запуск при этих условиях. Добавь другие runtime для сравнения.');
   if(profiles.size>1)warnings.push('Разные memory profile отображены вместе для обзора. Сопоставляй их с учётом различий Xms/Xmx и native heap.');
-  if(base.some(r=>r.status!=='completed'))warnings.push('Есть незавершённые или неуспешные запуски; проверь status в metadata.');
+  if(base.some(r=>r.status!=='eligible'))warnings.push('Есть запуски без допуска валидатора; они не являются эталонными данными.');
   if(!warnings.length)warnings.push('Условия нагрузки и лимиты совпадают; каждая линия показывает отдельный запуск.');
   $('notice').textContent=warnings.join(' ');
   const legend=$('legend');legend.replaceChildren();for(const run of base){let button=document.createElement('button');button.type='button';button.className=`series-pill ${excluded.has(run.name)?'inactive':'active'}`;button.setAttribute('aria-pressed',String(!excluded.has(run.name)));let swatch=document.createElement('i');swatch.className='swatch';swatch.style.background=color(run);button.append(swatch,document.createTextNode(label(run)));button.title=run.name;button.onclick=()=>{excluded.has(run.name)?excluded.delete(run.name):excluded.add(run.name);draw()};legend.appendChild(button)}

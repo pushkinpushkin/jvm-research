@@ -37,7 +37,7 @@ def update_metadata(path, **values):
 
 def initialize(path):
     e = os.environ
-    update_metadata(path, schemaVersion=2, runId=e['RUN_ID'], runProfile=e['RUN_PROFILE'],
+    update_metadata(path, schemaVersion=3, runId=e['RUN_ID'], runProfile=e['RUN_PROFILE'],
                     jvmVariant=e['JVM_VARIANT'], jvmProfile=e['JVM_PROFILE'],
                     runtimeMode=e['RUNTIME_MODE'], memoryProfile=e['MEMORY_PROFILE'],
                     scenario=e['SCENARIO'], runtimeImage=e['RUNTIME_IMAGE'],
@@ -60,6 +60,8 @@ def initialize(path):
                     syntheticWarmup=e['SYNTHETIC_WARMUP'] == 'true',
                     k6TimeSeries=e['K6_TIME_SERIES'] == 'true',
                     composeProject=e['COMPOSE_PROJECT_NAME'],
+                    postIdleSeconds=int(e.get('POST_IDLE_SECONDS', '1800')), drainTimeoutSeconds=int(e.get('DRAIN_TIMEOUT_SECONDS','300')),
+                    host={'hostname':__import__('platform').node(), 'machine':__import__('platform').machine(), 'system':__import__('platform').platform()},
                     createdAt=utc_now(), status='preparing')
 
 

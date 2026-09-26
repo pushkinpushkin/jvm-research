@@ -8,7 +8,13 @@ spring:
     mongodb:
       uri: ${MONGO_URI:mongodb://localhost:27017/jvm_research}
       auto-index-creation: true
+  task:
+    scheduling:
+      pool:
+        size: 3
   kafka:
+    listener:
+      ack-mode: record
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     admin:
       auto-create: true
@@ -17,6 +23,7 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP:jvm-research-sandbox}
+      enable-auto-commit: false
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer

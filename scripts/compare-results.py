@@ -37,11 +37,11 @@ def summarize(run):
     # Exact profile/options retained in the group key: changing flags cannot silently pool samples.
     settings = {key: meta.get(key) for key in ['schemaVersion', 'scenario', 'memoryProfile', 'runtimeMode',
                 'gitSha', 'gitDirty', 'samplingIntervalSeconds', 'syntheticWarmup', 'prometheusSampling',
-                'javaToolOptions', 'runtimeImage', 'nativeBuilderImage']}
+                'javaToolOptions', 'runtimeImage', 'nativeBuilderImage','workloadSha256','trafficProfile','observedWork','host','rateTimeUnit','postIdleSeconds']}
     settings.update(load=load, container=container)
     group = hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()[:10]
     row = {'run': run.name, 'runtime': meta.get('jvmVariant', 'unknown'),
-           'status': meta.get('status', 'legacy/unknown'),
+           'status': ('eligible' if meta.get('comparisonEligible') else 'rejected') if meta.get('schemaVersion',0) >= 3 else meta.get('status', 'legacy/unknown'),
            'scenario': meta.get('scenario', load.get('scenario', 'unknown')),
            'memory_profile': meta.get('memoryProfile', 'legacy/unknown'),
            'cpu': container.get('cpuLimit'), 'limit': container.get('memoryLimit'),
@@ -54,7 +54,7 @@ def summarize(run):
     # 'fails' counts false samples (successful HTTP requests), so never use it here.
     failures = round(rate * requests) if rate is not None and requests is not None else failed.get('passes')
     row.update(requests=requests, failures=failures, failure_pct=rate * 100 if rate is not None else None)
-    latency = metric(summary, 'http_req_duration')
+    latency = metric(summary, 'business_latency' if meta.get('schemaVersion',0) >= 3 else 'http_req_duration')
     for source, key in [('avg', 'avg_ms'), ('med', 'med_ms'), ('p(95)', 'p95_ms'),
                         ('p(99)', 'p99_ms'), ('p(99.9)', 'p99_9_ms'), ('max', 'max_ms')]:
         row[key] = latency.get(source)
@@ -63,10 +63,11 @@ def summarize(run):
     if path.exists():
         with path.open() as handle:
             for item in csv.DictReader(handle):
+                if meta.get('schemaVersion',0) >= 3 and item.get('phase') != meta.get('scenario'): continue
                 if item.get('memory_used_bytes') and item.get('elapsed_seconds'):
-                    samples.append((float(item['elapsed_seconds']), float(item['memory_used_bytes']) / 1024**2))
+                    samples.append((float(item.get('phase_elapsed_seconds') or item['elapsed_seconds']), float(item['memory_used_bytes']) / 1024**2))
     values = [value for _, value in samples]
-    row.update(samples=len(samples), memory_avg_mib=statistics.mean(values) if values else None,
+    row.update(samples=len(samples), memory_avg_mib=(sum((b[0]-a[0])*(a[1]+b[1])/2 for a,b in zip(samples,samples[1:]))/(samples[-1][0]-samples[0][0]) if len(samples)>1 and samples[-1][0]>samples[0][0] else (values[0] if values else None)) if meta.get('schemaVersion',0)>=3 else (statistics.mean(values) if values else None),
                memory_med_mib=statistics.median(values) if values else None,
                memory_p95_mib=percentile(values, .95), memory_peak_mib=max(values) if values else None,
                initial_mib=samples[0][1] if samples else None)

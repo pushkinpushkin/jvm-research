@@ -1,35 +1,61 @@
 package dev.pushkin.jvmresearch.enterprise.kafka;
 
-import java.time.Instant;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/** Best-effort cache; Mongo event receipts are authoritative inside their retention window. */
 @Component
 public class InMemoryBusinessEventDeduplicationService {
+    private final Map<String, Long> processedEventIds = new LinkedHashMap<>();
+    private final int capacity;
+    private final long ttlMillis;
+    private final Clock clock;
 
-    private final Map<String, Instant> processedEventIds = new ConcurrentHashMap<>();
+    public InMemoryBusinessEventDeduplicationService() {
+        this(10_000, Duration.ofHours(1), Clock.systemUTC());
+    }
+
+    InMemoryBusinessEventDeduplicationService(int capacity, Duration ttl, Clock clock) {
+        if (capacity < 1 || ttl.isNegative() || ttl.isZero()) throw new IllegalArgumentException();
+        this.capacity = capacity;
+        this.ttlMillis = ttl.toMillis();
+        this.clock = clock;
+    }
 
     public boolean markProcessed(BusinessEvent event) {
-        if (event == null) {
-            return false;
-        }
-        return markProcessed(event.eventId());
+        return event != null && markProcessed(event.eventId());
     }
 
-    public boolean markProcessed(String eventId) {
-        if (!StringUtils.hasText(eventId)) {
-            return false;
-        }
-        return processedEventIds.putIfAbsent(eventId, Instant.now()) == null;
+    public synchronized boolean markProcessed(String id) {
+        purge();
+        if (!StringUtils.hasText(id) || processedEventIds.containsKey(id)) return false;
+        while (processedEventIds.size() >= capacity)
+            processedEventIds.remove(processedEventIds.keySet().iterator().next());
+        processedEventIds.put(id, clock.millis());
+        return true;
     }
 
-    public boolean isProcessed(String eventId) {
-        return StringUtils.hasText(eventId) && processedEventIds.containsKey(eventId);
+    public synchronized boolean isProcessed(String id) {
+        purge();
+        return processedEventIds.containsKey(id);
     }
 
-    public int size() {
+    public synchronized int size() {
+        purge();
         return processedEventIds.size();
+    }
+
+    private void purge() {
+        long cutoff = clock.millis() - ttlMillis;
+        var iterator = processedEventIds.entrySet().iterator();
+        while (iterator.hasNext()) {
+            if (iterator.next().getValue() > cutoff) break;
+            iterator.remove();
+        }
     }
 }

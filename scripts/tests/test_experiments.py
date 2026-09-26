@@ -41,9 +41,15 @@ if name == 'docker':
         if os.environ.get('TEST_COLLECTOR_FAIL') == '1': sys.exit(7)
         print(json.dumps({'MemUsage':'100MiB / 1GiB','MemPerc':'9.77%','CPUPerc':'2.0%','PIDs':'30'}))
     elif 'ps' in args and '-q' in args: print('fake')
-    elif 'exec' in args: sys.exit(1)
+    elif 'exec' in args:
+        if 'cgroup.controllers' in ' '.join(args):
+            if os.environ.get('TEST_COLLECTOR_FAIL') == '1': sys.exit(7)
+            print('memory.current 104857600\\nmemory.peak 104857600\\nmemory.max 1073741824\\nmemory.swap.current 0\\nmemory.stat.inactive_file 0\\nmemory.events.oom 0\\nmemory.events.oom_kill 0\\ncpu.stat.usage_usec 100000\\ncpu.stat.throttled_usec 0\\ncpu.stat.nr_periods 5\\ncpu.stat.nr_throttled 0\\npids.current 30')
+        elif 'jcmd' in ' '.join(args): sys.exit(1)
 elif name == 'curl':
     if 'prometheus' in args[-1]: print('jvm_memory_used_bytes{area="heap"} 100')
+    elif '/research/state' in args[-1]: print(json.dumps({'bounds':{'pendingEvents':0,'waiting':0,'retryable':0},'counters':{'events_enqueued':0,'events_published':0,'events_consumed':0}}))
+    elif '/generate' in args[-1]: print(json.dumps({'saved':int(os.environ['SEED_ORDERS'])}))
     else: print('{"status":"UP"}')
 elif name == 'k6':
     time.sleep(float(os.environ.get('TEST_WORKLOAD_SECONDS', '0.3')))
@@ -102,7 +108,7 @@ class RunnerTests(unittest.TestCase):
                         TEST_CALLS=str(self.directory / 'calls.jsonl'),
                         RESULTS_ROOT=str(self.directory / 'results'), RUN_ID='test-run',
                         DURATION='1s', INTERVAL_SECONDS='0.1', COLLECT_PROMETHEUS='false',
-                        ORDER_POOL='5', SEED_ORDERS='5')
+                        ORDER_POOL='5', SEED_ORDERS='5', POST_IDLE_SECONDS='1', DRAIN_TIMEOUT_SECONDS='1')
         for key in ['JAVA_TOOL_OPTIONS', 'SCENARIO', 'RATE', 'JVM_VARIANT', 'RUN_PROFILE', 'MEMORY_PROFILE']:
             self.env.pop(key, None)
         self.result = self.directory / 'results/test-run'
@@ -125,7 +131,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_native_idle_no_business_workload_and_overrides(self):
         result = self.run_experiment(CONTAINER_CPU_LIMIT='3')
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(result.returncode, 2, result.stderr + result.stdout)  # incomplete fake evidence must be rejected
         meta = json.loads((self.result / 'metadata.json').read_text())
         self.assertEqual(meta['runtimeMode'], 'native')
         self.assertEqual(meta['container']['cpuLimit'], '3')
@@ -148,7 +154,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(meta['load']['rate'], 1)
         self.assertEqual(meta['memoryProfile'], 'elastic-heap')
         self.assertEqual(meta['status'], 'failed')
-        self.assertEqual(compare.summarize(self.result)['p99_9_ms'], 36)
+        self.assertIsNone(compare.summarize(self.result)['p99_9_ms'])  # legacy HTTP latency is not business latency
         self.assert_cleaned()
 
     def test_collector_failure_invalidates_run(self):
