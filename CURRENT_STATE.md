@@ -2,7 +2,7 @@
 
 ## Где мы сейчас
 
-Этап: подготовка VPS к HotSpot pilot. Добавлены репозиторные скрипты для настройки Debian/Ubuntu VPS, preflight-проверки и фиксации host snapshot; сами проверки на исследовательском хосте ещё не выполнены. Длительная стабильность и сравнительные выводы ещё не доказаны.
+Этап: подготовка VPS к HotSpot pilot. Добавлены репозиторные скрипты для настройки Debian/Ubuntu VPS, preflight-проверки и фиксации host snapshot; сами проверки на исследовательском хосте ещё не выполнены. При первом low-load pilot на Selectel подтверждён штатный длинный участок без вывода: после k6 runner переходит в drain и затем в `post-load-idle`, где при `POST_IDLE_SECONDS=600` ещё 10 минут собирает метрики. Runner теперь печатает короткие progress/phase строки и подавляет пугающий stderr от необязательного `docker image inspect` при фиксации base image digest. Длительная стабильность и сравнительные выводы ещё не доказаны.
 
 Базовая реализация воспроизводимого стенда: `d83cff13a1c50eb651b1f3248a536ca44c3a2198`; исправление конечного tick k6: `e9388c55cc44d3afa7ec5b5ea2ba174019596640`. Подготовка long-run отчётов: `2a8b104`.
 
@@ -12,7 +12,7 @@
 
 ## Подтверждено
 
-Локально для VPS-скриптов поверх `cf6815b`: `for f in scripts/vps-install-prereqs.sh scripts/vps-preflight.sh scripts/vps-capture-host.sh; do bash -n "$f"; done` — success; `python3 -m unittest discover scripts/tests` — 20/20. Ранее после подготовки long-run отчёта: `./gradlew test` — success; 14 Java tests и bootJar, 10 живых HTTP-проверок WireMock; после endpoint fix — Python tests со строгой проверкой boundary skip, недостающей и лишней работы. Исполнение JS guard проверено на обычном index, одном endpoint no-op и недопустимом следующем index.
+Локально для runner observability fix: `bash -n scripts/run-experiment.sh` — success; `python3 -m unittest discover scripts/tests` — 20/20. Ранее для VPS-скриптов поверх `cf6815b`: `for f in scripts/vps-install-prereqs.sh scripts/vps-preflight.sh scripts/vps-capture-host.sh; do bash -n "$f"; done` — success; `python3 -m unittest discover scripts/tests` — 20/20. Ранее после подготовки long-run отчёта: `./gradlew test` — success; 14 Java tests и bootJar, 10 живых HTTP-проверок WireMock; после endpoint fix — Python tests со строгой проверкой boundary skip, недостающей и лишней работы. Исполнение JS guard проверено на обычном index, одном endpoint no-op и недопустимом следующем index.
 
 CI [36193573959](https://github.com/pushkinpushkin/jvm-research/actions/runs/36193573959) для `e9388c55cc44d3afa7ec5b5ea2ba174019596640`: **success**, все 6 jobs. Java/Python tests, bootJar и 10 WireMock mappings успешны. Все четыре runtime, включая сборку Native executable, прошли idle, normal load и faults + async drain: **12 smoke-прогонов, у каждого eligible=true**. Это короткие функциональные проверки, не baseline.
 

@@ -82,7 +82,11 @@ def ready(path, inspection):
 
 
 def image_reference(image):
-    data = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image], text=True))[0]
+    data = json.loads(subprocess.check_output(
+        ['docker', 'image', 'inspect', image],
+        text=True,
+        stderr=subprocess.DEVNULL,
+    ))[0]
     repo_digests = data.get('RepoDigests') or []
     return {'reference': image, 'imageId': data.get('Id'), 'repoDigests': repo_digests,
             'created': data.get('Created')}
