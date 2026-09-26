@@ -33,7 +33,10 @@ args = sys.argv[1:]
 with open(os.environ['TEST_CALLS'], 'a') as f:
     f.write(json.dumps([name, args]) + '\\n')
 if name == 'docker':
-    if args[0] == 'inspect':
+    if args[:2] == ['image', 'inspect']:
+        image = args[2]
+        print(json.dumps([{'Id':'sha256:'+image.replace('/', '_').replace(':', '_'), 'RepoDigests':[image.split(':')[0]+'@sha256:resolved'], 'Created':'2026-09-25T00:00:00Z'}]))
+    elif args[0] == 'inspect':
         print(json.dumps([{'Id':'fake', 'Image':'sha256:fake',
               'State':{'StartedAt':datetime.datetime.now(datetime.timezone.utc).isoformat()},
               'HostConfig':{'NanoCpus':int(float(os.environ['CONTAINER_CPU_LIMIT'])*1e9),'Memory':1073741824}}]))
@@ -139,6 +142,8 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(meta['load']['seedOrders'], 0)
         self.assertEqual(meta['status'], 'completed')
         self.assertGreaterEqual(meta['startupSeconds'], 0)
+        self.assertIn('mongo:7.0', meta['imageDigests'])
+        self.assertTrue((self.result / 'image-digests.json').exists())
         self.assertTrue((self.result / 'runtime-metrics.csv').exists())
         for name,args in self.calls():
             self.assertNotEqual(name, 'k6')

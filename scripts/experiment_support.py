@@ -81,6 +81,29 @@ def ready(path, inspection):
                     status='running')
 
 
+def image_reference(image):
+    data = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image], text=True))[0]
+    repo_digests = data.get('RepoDigests') or []
+    return {'reference': image, 'imageId': data.get('Id'), 'repoDigests': repo_digests,
+            'created': data.get('Created')}
+
+
+def image_digests(metadata_path, output_path, *images):
+    seen = []
+    for image in images:
+        if image and image not in seen:
+            seen.append(image)
+    result = {}
+    for image in seen:
+        try:
+            result[image] = image_reference(image)
+        except subprocess.CalledProcessError as ex:
+            result[image] = {'reference': image, 'error': f'docker image inspect failed: {ex.returncode}'}
+    output = Path(output_path)
+    output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n')
+    update_metadata(metadata_path, imageDigestsFile=output.name, imageDigests=result)
+
+
 if __name__ == '__main__':
     command, *args = sys.argv[1:]
     if command == 'duration':
@@ -89,6 +112,8 @@ if __name__ == '__main__':
         initialize(args[0])
     elif command == 'ready':
         ready(*args)
+    elif command == 'image-digests':
+        image_digests(*args)
     elif command == 'finish':
         update_metadata(args[0], exitCode=int(args[1]),
                         status='completed' if args[1] == '0' else 'failed', finishedAt=utc_now())
