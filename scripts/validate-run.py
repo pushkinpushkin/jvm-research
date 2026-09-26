@@ -21,7 +21,7 @@ def kafka_lag(text, no_events=False):
         parts = line.split()
         if len(parts) >= 6 and parts[1] in ('order.status.changed', 'business.event.occurred') and parts[2].isdigit():
             lag = parts[5]
-            if lag == '-' and no_events and parts[4] == '0': lag = '0'
+            if lag == '-' and parts[4] == '0': lag = '0'
             if not lag.isdigit(): raise ValueError('Kafka lag is unknown')
             rows.append((parts[1], int(lag)))
     if {x[0] for x in rows} != {'order.status.changed','business.event.occurred'}:
