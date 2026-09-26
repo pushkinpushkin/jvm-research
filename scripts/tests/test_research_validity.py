@@ -72,6 +72,16 @@ class AdmissionTests(unittest.TestCase):
     def write(self,name,data): (self.run/name).write_text(json.dumps(data))
     def tearDown(self): self.temp.cleanup()
     def test_complete_evidence_is_eligible(self): self.assertEqual([],validator.validate(self.run)['reasons'])
+    def test_empty_kafka_partitions_with_dash_lag_are_zero(self):
+        text = '''
+GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG CONSUMER-ID HOST CLIENT-ID
+jvm-research-sandbox order.status.changed 0 6 6 0 consumer host client
+jvm-research-sandbox order.status.changed 1 - 0 - consumer host client
+jvm-research-sandbox business.event.occurred 0 3 3 0 consumer host client
+jvm-research-sandbox business.event.occurred 1 - 0 - consumer host client
+'''
+        self.assertEqual(0, validator.kafka_lag(text))
+
     def test_single_boundary_tick_is_not_business_work(self):
         self.summary['metrics']['trace_boundary_skips']={'count':1}
         self.summary['metrics']['iterations']={'count':11}
