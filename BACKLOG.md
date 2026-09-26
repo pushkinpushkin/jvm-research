@@ -4,6 +4,7 @@
 
 - На исследовательском хосте зафиксировать Docker/ядро, immutable образы зависимостей и runtime, фактический GC; проверить cgroup v2/memory.peak.
 - Запустить `scripts/vps-preflight.sh` и `scripts/vps-capture-host.sh` на выбранном VPS; сохранить `results/host/` вместе с артефактами pilot.
+- Исправить `scripts/vps-install-prereqs.sh`: на Selectel Ubuntu resolute внешний Docker/Grafana apt setup упал с HTTP 403/GPG, а `k6` отсутствует в default apt; нужен явный fallback/диагностика. Факт зафиксирован в `docs/vps-setup-log.md`.
 
 ## P1 — HotSpot pilot и стабильность
 
