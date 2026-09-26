@@ -3,6 +3,7 @@
 ## P0 — допуск к пилоту
 
 - На исследовательском хосте зафиксировать Docker/ядро, immutable образы зависимостей и runtime, фактический GC; проверить cgroup v2/memory.peak.
+- Запустить `scripts/vps-preflight.sh` и `scripts/vps-capture-host.sh` на выбранном VPS; сохранить `results/host/` вместе с артефактами pilot.
 
 ## P1 — HotSpot pilot и стабильность
 
