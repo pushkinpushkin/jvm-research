@@ -70,6 +70,16 @@ export SCENARIO RATE DURATION INTERVAL_SECONDS ORDER_POOL SEED_ORDERS APP_PORT R
 export RUNTIME_MODE MEMORY_PROFILE RUNTIME_DOCKERFILE RUNTIME_IMAGE CONTAINER_CPU_LIMIT CONTAINER_MEMORY_LIMIT WORK_CPU_LIMIT
 export GIT_SHA RUN_ID RUN_RESULTS_DIR BASE_URL COMPOSE_PROJECT_NAME COLLECT_PROMETHEUS SYNTHETIC_WARMUP K6_TIME_SERIES
 export PREALLOCATED_VUS MAX_VUS SLEEP_SECONDS
+LOG_PROGRESS="${LOG_PROGRESS:-true}"
+log_progress() {
+  if [[ "$LOG_PROGRESS" == true ]]; then
+    printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$*" >&2
+  fi
+}
+set_phase() {
+  log_progress "phase: $2"
+  python3 scripts/phase.py "$1" "$2"
+}
 python3 - <<'PY'
 import math, os
 for name in ['INTERVAL_SECONDS', 'CONTAINER_CPU_LIMIT']:
@@ -96,6 +106,8 @@ fi
 docker compose version >/dev/null
 [[ ! -e "$RUN_RESULTS_DIR" ]] || { echo "Results already exist: $RUN_RESULTS_DIR" >&2; exit 1; }
 mkdir -p "$RUN_RESULTS_DIR/app-logs"
+log_progress "run id: $RUN_ID"
+log_progress "results: $RUN_RESULTS_DIR"
 cp "$profile_file" "$RUN_RESULTS_DIR/profile.env"
 python3 scripts/experiment_support.py init "$RUN_RESULTS_DIR/metadata.json"
 python3 scripts/workload.py "$RUN_RESULTS_DIR"
@@ -142,8 +154,10 @@ docker version > "$RUN_RESULTS_DIR/docker-version.txt"
 docker info > "$RUN_RESULTS_DIR/docker-info.txt"
 git diff HEAD --binary > "$RUN_RESULTS_DIR/source.diff"
 # Build before starting the application: build time is not startup time.
+log_progress "building sandbox-service image"
 compose build sandbox-service > "$RUN_RESULTS_DIR/build.log" 2>&1
 compose_started=true
+log_progress "starting dependencies: mongo kafka wiremock"
 compose up -d mongo kafka wiremock
 python3 scripts/experiment_support.py image-digests "$RUN_RESULTS_DIR/metadata.json" "$RUN_RESULTS_DIR/image-digests.json" \
   "$RUNTIME_IMAGE" "${NATIVE_BUILDER_IMAGE:-}" "mongo:7.0" "apache/kafka:3.7.1" "wiremock/wiremock:3.9.1"
@@ -153,32 +167,44 @@ for attempt in $(seq 1 90); do
     && compose exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1 \
     && curl --max-time 2 -fsS http://localhost:8089/__admin/mappings >/dev/null; then break; fi
   [[ "$attempt" -lt 90 ]] || { echo 'Dependencies did not become ready' >&2; exit 1; }
+  if (( attempt == 1 || attempt % 15 == 0 )); then
+    log_progress "waiting for dependencies (${attempt}/90)"
+  fi
   sleep 2
 done
-python3 scripts/phase.py "$RUN_RESULTS_DIR" startup
+log_progress "dependencies are ready"
+set_phase "$RUN_RESULTS_DIR" startup
 OBSERVATION_EPOCH="$(python3 -c 'import time; print(time.time())')"
 export OBSERVATION_EPOCH
+log_progress "starting sandbox-service"
 compose up -d --no-deps sandbox-service
 container_id="$(compose ps -q sandbox-service)"
 docker inspect "$container_id" > "$RUN_RESULTS_DIR/container-inspect.json"
 OUT="$RUN_RESULTS_DIR/runtime-metrics.csv" bash scripts/collect-runtime-metrics.sh --container "$container_id" \
   > "$RUN_RESULTS_DIR/collector.log" 2>&1 &
 collector_pid=$!
+log_progress "metric collector started (pid $collector_pid)"
 healthy=false
 health_deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
+next_health_progress=$((SECONDS + 30))
 while (( SECONDS < health_deadline )); do
   if curl --max-time 2 -fsS "${BASE_URL}/actuator/health/readiness" > "$RUN_RESULTS_DIR/health.json" 2>/dev/null \
     && python3 -c 'import json,sys; sys.exit(json.load(open(sys.argv[1])).get("status") != "UP")' "$RUN_RESULTS_DIR/health.json"; then
     healthy=true
     break
   fi
+  if (( SECONDS >= next_health_progress )); then
+    log_progress "waiting for application readiness"
+    next_health_progress=$((SECONDS + 30))
+  fi
   sleep 0.25
 done
 [[ "$healthy" == true ]] || { echo 'Application readiness check failed' >&2; exit 1; }
+log_progress "application readiness is UP"
 python3 scripts/experiment_support.py ready "$RUN_RESULTS_DIR/metadata.json" "$RUN_RESULTS_DIR/container-inspect.json"
 READY_EPOCH="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["readyEpoch"])' "$RUN_RESULTS_DIR/metadata.json")"
 export READY_EPOCH
-python3 scripts/phase.py "$RUN_RESULTS_DIR" preparation
+set_phase "$RUN_RESULTS_DIR" preparation
 
 curl --max-time 10 -fsS "${BASE_URL}/run-info" > "$RUN_RESULTS_DIR/run-info.json"
 curl --max-time 10 -fsS "${BASE_URL}/actuator/prometheus" > "$RUN_RESULTS_DIR/prometheus-before.txt" || true
@@ -194,23 +220,31 @@ assert s['saved'] == int(sys.argv[2]), s
 CHECK_SEED
 fi
 curl --max-time 10 -fsS "${BASE_URL}/research/state" > "$RUN_RESULTS_DIR/state-before.json"
-python3 scripts/phase.py "$RUN_RESULTS_DIR" "$SCENARIO"
+set_phase "$RUN_RESULTS_DIR" "$SCENARIO"
 if [[ "$SCENARIO" == idle ]]; then
+  log_progress "idle workload started for ${DURATION}"
   sleep "$DURATION_SECONDS" &
 else
   set --
   if [[ "$K6_TIME_SERIES" == true ]]; then set -- --out "json=$RUN_RESULTS_DIR/k6-timeseries.json"; fi
+  log_progress "k6 workload started for ${DURATION}; live log: $RUN_RESULTS_DIR/k6.log"
   k6 run "$@" --summary-export "$RUN_RESULTS_DIR/k6-summary.json" load/k6/enterprise-flow.js \
     > "$RUN_RESULTS_DIR/k6.log" 2>&1 &
 fi
 workload_pid=$!
 load_phase_finished=false
 load_deadline=$((SECONDS + $(python3 -c 'import math,sys; print(math.ceil(float(sys.argv[1])))' "$DURATION_SECONDS")))
+next_workload_progress=$((SECONDS + 60))
 # Detect collector failures while the workload runs, including during idle.
 while kill -0 "$workload_pid" 2>/dev/null; do
   if [[ "$SCENARIO" != idle && "$load_phase_finished" == false ]] && (( SECONDS >= load_deadline )); then
-    python3 scripts/phase.py "$RUN_RESULTS_DIR" drain
+    set_phase "$RUN_RESULTS_DIR" drain
     load_phase_finished=true
+  fi
+  if (( SECONDS >= next_workload_progress )); then
+    phase="$(cat "$RUN_RESULTS_DIR/phase.txt" 2>/dev/null || echo "$SCENARIO")"
+    log_progress "still running: phase=$phase elapsed=${SECONDS}s"
+    next_workload_progress=$((SECONDS + 60))
   fi
   kill -0 "$collector_pid" 2>/dev/null || { echo 'Metric collector stopped unexpectedly; see collector.log' >&2; exit 1; }
   sleep 1
@@ -219,20 +253,32 @@ workload_code=0
 wait "$workload_pid" || workload_code=$?
 workload_pid=''
 if [[ "$SCENARIO" != idle ]]; then
-  if [[ "$load_phase_finished" == false ]]; then python3 scripts/phase.py "$RUN_RESULTS_DIR" drain; fi
+  if [[ "$load_phase_finished" == false ]]; then set_phase "$RUN_RESULTS_DIR" drain; fi
   drained=false
   drain_deadline=$((SECONDS + DRAIN_TIMEOUT_SECONDS))
+  next_drain_progress=$((SECONDS + 30))
   while (( SECONDS < drain_deadline )); do
     kill -0 "$collector_pid" 2>/dev/null || { echo 'Collector failed during drain' >&2; exit 1; }
     curl --max-time 10 -fsS "${BASE_URL}/research/state" > "$RUN_RESULTS_DIR/state-drain.json"
     if python3 scripts/check-drained.py "$RUN_RESULTS_DIR/state-drain.json"; then drained=true; break; fi
+    if (( SECONDS >= next_drain_progress )); then
+      log_progress "waiting for background drain"
+      next_drain_progress=$((SECONDS + 30))
+    fi
     sleep 2
   done
   [[ "$drained" == true ]] || { echo 'Background processing did not drain' >&2; exit 1; }
-  python3 scripts/phase.py "$RUN_RESULTS_DIR" post-load-idle
+  log_progress "background drain complete"
+  set_phase "$RUN_RESULTS_DIR" post-load-idle
   idle_deadline=$((SECONDS + POST_IDLE_SECONDS))
+  next_idle_progress=$((SECONDS + 60))
   while (( SECONDS < idle_deadline )); do
     kill -0 "$collector_pid" 2>/dev/null || { echo 'Collector failed during post-load idle' >&2; exit 1; }
+    if (( SECONDS >= next_idle_progress )); then
+      remaining=$((idle_deadline - SECONDS))
+      log_progress "post-load idle running; remaining ${remaining}s"
+      next_idle_progress=$((SECONDS + 60))
+    fi
     sleep 1
   done
 fi
@@ -241,7 +287,7 @@ compose exec -T kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server
   --group jvm-research-sandbox --describe > "$RUN_RESULTS_DIR/kafka-lag.txt"
 docker inspect "$container_id" > "$RUN_RESULTS_DIR/container-final.json"
 stop_collector
-python3 scripts/phase.py "$RUN_RESULTS_DIR" finished
+set_phase "$RUN_RESULTS_DIR" finished
 [[ "$SCENARIO" == idle ]] || cat "$RUN_RESULTS_DIR/k6.log"
 curl --max-time 10 -fsS "${BASE_URL}/actuator/prometheus" > "$RUN_RESULTS_DIR/prometheus-after.txt" || true
 docker stats --no-stream "$container_id" > "$RUN_RESULTS_DIR/docker-stats.txt" || true
