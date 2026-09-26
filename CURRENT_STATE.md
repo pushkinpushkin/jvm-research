@@ -2,7 +2,7 @@
 
 ## Где мы сейчас
 
-Этап: подготовка отчёта к длинным HotSpot stability-прогонам выполнена отдельной веткой `codex-long-run-report-windows`; PR ещё не открыт. Длительная стабильность и сравнительные выводы ещё не доказаны.
+Этап: подготовка VPS к HotSpot pilot. Добавлены репозиторные скрипты для настройки Debian/Ubuntu VPS, preflight-проверки и фиксации host snapshot; сами проверки на исследовательском хосте ещё не выполнены. Длительная стабильность и сравнительные выводы ещё не доказаны.
 
 Базовая реализация воспроизводимого стенда: `d83cff13a1c50eb651b1f3248a536ca44c3a2198`; исправление конечного tick k6: `e9388c55cc44d3afa7ec5b5ea2ba174019596640`. Подготовка long-run отчётов: `2a8b104`.
 
@@ -12,7 +12,7 @@
 
 ## Подтверждено
 
-Локально после подготовки long-run отчёта: `python3 -m unittest discover scripts/tests` — 20/20; `./gradlew test` — success. Ранее: 14 Java tests и bootJar, 10 живых HTTP-проверок WireMock; после endpoint fix — Python tests со строгой проверкой boundary skip, недостающей и лишней работы. Исполнение JS guard проверено на обычном index, одном endpoint no-op и недопустимом следующем index.
+Локально для VPS-скриптов поверх `cf6815b`: `for f in scripts/vps-install-prereqs.sh scripts/vps-preflight.sh scripts/vps-capture-host.sh; do bash -n "$f"; done` — success; `python3 -m unittest discover scripts/tests` — 20/20. Ранее после подготовки long-run отчёта: `./gradlew test` — success; 14 Java tests и bootJar, 10 живых HTTP-проверок WireMock; после endpoint fix — Python tests со строгой проверкой boundary skip, недостающей и лишней работы. Исполнение JS guard проверено на обычном index, одном endpoint no-op и недопустимом следующем index.
 
 CI [36193573959](https://github.com/pushkinpushkin/jvm-research/actions/runs/36193573959) для `e9388c55cc44d3afa7ec5b5ea2ba174019596640`: **success**, все 6 jobs. Java/Python tests, bootJar и 10 WireMock mappings успешны. Все четыре runtime, включая сборку Native executable, прошли idle, normal load и faults + async drain: **12 smoke-прогонов, у каждого eligible=true**. Это короткие функциональные проверки, не baseline.
 
@@ -22,8 +22,8 @@ CI выявил и подтвердил исправление endpoint tick k6:
 
 ## Что мешает baseline
 
-Нужны исследовательский хост и фиксированные образы, pilot 10–30 минут, контроль observer overhead (sampling 5/15 секунд), stability 1–3 часа и выбор длительности. GitHub smoke на ephemeral runners не заменяет эту проверку. `image-digests.json` фиксирует доступные image IDs / repo digests, но не заменяет закрепление хоста и локального Docker окружения. Ограничения: одна реплика, конечное dedup-окно; docker exec и HTTP telemetry входят в измеряемую нагрузку. Working set не является RSS. Нельзя сравнивать runtime только по низкой памяти при нарушении SLO.
+Нужно выполнить `scripts/vps-preflight.sh` и `scripts/vps-capture-host.sh` на выбранном исследовательском хосте, зафиксировать образы и фактический GC, затем провести pilot 10–30 минут, контроль observer overhead (sampling 5/15 секунд), stability 1–3 часа и выбрать длительность. GitHub smoke на ephemeral runners не заменяет эту проверку. `image-digests.json` фиксирует доступные image IDs / repo digests, но не заменяет закрепление хоста и локального Docker окружения. Ограничения: одна реплика, конечное dedup-окно; docker exec и HTTP telemetry входят в измеряемую нагрузку. Working set не является RSS. Нельзя сравнивать runtime только по низкой памяти при нарушении SLO.
 
 ## Следующий шаг
 
-Одна отдельная цель после merge PR с long-run подготовкой: HotSpot pilot 10–30 минут на выбранном фиксированном хосте с бюджетом 2 CPU/1 GiB; проверить instrumentation, полноту данных и variance. Затем stability 1–3 часа с новыми окнами и slope. Полная матрица откладывается до корректного HotSpot baseline. Для продолжения читать этот файл и `RESEARCH_PROTOCOL.md`; историю переписки и полные логи повторно не загружать.
+Одна отдельная цель: на выбранном VPS запустить `scripts/vps-install-prereqs.sh` при необходимости, затем `scripts/vps-preflight.sh` и `scripts/vps-capture-host.sh`; если preflight проходит без FAIL, выполнить HotSpot pilot 10–30 минут с бюджетом приложения 2 CPU/1 GiB, проверить instrumentation, полноту данных и variance. Затем stability 1–3 часа с новыми окнами и slope. Полная матрица откладывается до корректного HotSpot baseline. Для продолжения читать этот файл и `RESEARCH_PROTOCOL.md`; историю переписки и полные логи повторно не загружать.

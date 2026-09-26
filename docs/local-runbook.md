@@ -6,6 +6,18 @@ Java 21, Bash, Python 3.9+, curl, Docker Engine/Desktop + Compose v2.
 Для `load` и `low-load` обязателен локальный k6. Без него запуск завершается ошибкой.
 `idle` k6 не использует. Порты 8080, 8089, 9092, 27017 должны быть свободны.
 
+Для VPS перед пилотом:
+
+```bash
+bash scripts/vps-install-prereqs.sh      # Debian/Ubuntu, при необходимости
+bash scripts/vps-preflight.sh
+bash scripts/vps-capture-host.sh
+```
+
+`vps-preflight.sh` проверяет Linux x86_64, CPU/RAM/disk, Docker Engine + Compose v2,
+cgroup v2, `memory.peak`, k6, Python и git. `vps-capture-host.sh` сохраняет снимок
+хоста в `results/host/`; этот каталог остаётся артефактом окружения, а не исходником.
+
 ```bash
 ./gradlew test bootJar
 # Локальная AOT-сборка: JAVA_HOME указывает на GraalVM JDK 21 с native-image;
