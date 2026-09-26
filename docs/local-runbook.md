@@ -18,6 +18,24 @@ bash scripts/vps-capture-host.sh
 cgroup v2, `memory.peak`, k6, Python и git. `vps-capture-host.sh` сохраняет снимок
 хоста в `results/host/`; этот каталог остаётся артефактом окружения, а не исходником.
 
+Длинные расчёты на VPS запускайте внутри `tmux`, чтобы обрыв SSH-сессии не прервал
+foreground shell и не отправил runner в досрочный cleanup:
+
+```bash
+tmux new -s jvm-pilot
+cd /root/jvm-research
+
+SCENARIO=low-load RATE=1 RATE_TIME_UNIT=1s DURATION=30m \
+ORDER_POOL=1000 SEED_ORDERS=1000 TRAFFIC_PROFILE=normal TRACE_SEED=20260925 \
+POST_IDLE_SECONDS=1800 RESULTS_ROOT=results/pilot/hotspot-low-load \
+bash scripts/run-experiment.sh profiles/work-hotspot-elastic.env
+```
+
+Отсоединиться без остановки процесса: `Ctrl-b`, затем `d`. Вернуться:
+`tmux attach -t jvm-pilot`; посмотреть живые сессии: `tmux ls`. Обычное закрытие
+SSH-окна без `tmux` может прервать `scripts/run-experiment.sh`: trap соберёт логи и
+удалит временный Compose project, но такой run будет досрочным и не годится как pilot.
+
 ```bash
 ./gradlew test bootJar
 # Локальная AOT-сборка: JAVA_HOME указывает на GraalVM JDK 21 с native-image;
