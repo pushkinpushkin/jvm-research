@@ -41,7 +41,17 @@ done
 
 
 def parse_cgroup(raw):
-    values = dict(line.split() for line in raw.splitlines())
+    values = {}
+    for line_number, line in enumerate(raw.splitlines(), start=1):
+        parts = line.split()
+        if not parts:
+            continue
+        if len(parts) < 2:
+            print(f'Skipping malformed cgroup line {line_number}: {line!r}',
+                  file=sys.stderr, flush=True)
+            continue
+        # Keep the first pair if a host kernel emits an extra token.
+        values[parts[0]] = parts[1]
     def number(key):
         value = values.get(key)
         return int(value) if value and value.isdigit() else ''
@@ -59,9 +69,29 @@ def parse_cgroup(raw):
             'memory_percent':100 * working / number('memory.max')}
 
 
-def sample(container):
-    raw = subprocess.check_output(['docker', 'exec', container, 'sh', '-c', CGROUP_SCRIPT], text=True, timeout=15)
-    return parse_cgroup(raw), raw
+def record_cgroup_error(error_dir, message, raw=''):
+    error_dir.mkdir(parents=True, exist_ok=True)
+    path = error_dir / f'{time.time():.6f}.txt'
+    details = f'{message}\n'
+    if raw:
+        details += f'\nraw:\n{raw}'
+    path.write_text(details)
+    print(f'Cgroup sample error saved to {path}: {message}', file=sys.stderr, flush=True)
+
+
+def sample(container, error_dir=None):
+    try:
+        raw = subprocess.check_output(['docker', 'exec', container, 'sh', '-c', CGROUP_SCRIPT], text=True, timeout=15)
+    except Exception as exc:
+        if error_dir is not None:
+            record_cgroup_error(error_dir, f'{type(exc).__name__}: {exc}')
+        raise
+    try:
+        return parse_cgroup(raw), raw
+    except Exception as exc:
+        if error_dir is not None:
+            record_cgroup_error(error_dir, f'{type(exc).__name__}: {exc}', raw)
+        raise
 
 
 def collect(container):
@@ -87,7 +117,7 @@ def collect(container):
             final_sample = STOP.is_set()
             tick = time.monotonic()
             # A lost container or Docker error invalidates the run, not a zero-memory sample.
-            row, raw = sample(container)
+            row, raw = sample(container, output.parent / 'cgroup-errors')
             now = time.time()
             row['cpu_percent'] = (100 * (row['cpu_usage_usec'] - previous[1]) / ((now - previous[0]) * 1e6)) if previous else ''
             previous = now, row['cpu_usage_usec']
