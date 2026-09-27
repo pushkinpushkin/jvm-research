@@ -132,6 +132,7 @@ container-inspect.json        # image ID, StartedAt, фактические runt
 build.log, docker-version.txt, docker-info.txt
 health.json, run-info.json
 runtime-metrics.csv, collector.log
+cgroup/*.txt, cgroup-errors/*.txt
 prometheus/*.prom, prometheus-before.txt, prometheus-after.txt
 k6-summary.json, k6.log        # отсутствуют в idle
 k6-timeseries.json            # только K6_TIME_SERIES=true
@@ -143,6 +144,28 @@ cleanup.log, docker-compose-ps.txt, docker-stats.txt
 превращается в успешный эксперимент. Collector и workload останавливаются при EXIT/INT/TERM;
 SIGKILL и авария хоста не позволяют выполнить cleanup. Данные старых Compose projects
 и исторические результаты не удаляются. Новые экспериментальные Mongo volumes одноразовые.
+
+## Перезапуск после сбоя collector
+
+Если серия прервалась из-за malformed cgroup sample, сначала сохраните partial-результат
+и переименуйте failed run; исходный каталог не удаляйте:
+
+```bash
+tar -czf v1-idle-rare-1h-before-collector-fix.tar.gz \
+  results/v1-idle-rare-1h/20260927-v1-idle-rare-1h \
+  results/host
+
+failed_run="results/v1-idle-rare-1h/20260927-v1-idle-rare-1h/pass1-forward/rare-requests/20260927-v1-idle-rare-1h-pass1-forward-3-rare-requests-work-graalvm-elastic"
+mv "$failed_run" "${failed_run}.failed-collector-parse"
+```
+
+После обновления checkout выполните `git pull --ff-only` и запускайте чистый результат
+после фикса collector. Если orchestrator надёжно поддерживает retry именно этого
+runtime и scenario, допустим такой retry; иначе задайте новый `RESULTS_ROOT`/`RUN_ID`
+для всей серии `v1-idle-rare-1h`, чтобы не смешивать samples до и после исправления.
+`cgroup-errors/` содержит raw и текст ошибки для samples, где обязательные counters
+оказались недоступны. Failed rare-requests остаётся диагностикой и не используется
+для сравнения runtimes.
 
 ## Сравнение
 

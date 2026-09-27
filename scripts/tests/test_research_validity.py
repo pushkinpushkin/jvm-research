@@ -41,6 +41,15 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(270,report.weighted_mean([(0,100),(2,200),(10,400)]))
         self.assertEqual({'jvm_memory_used_bytes_heap':30},report.prometheus_values('jvm_memory_used_bytes{area="heap",id="a"} 10\njvm_memory_used_bytes{area="heap",id="b"} 20\n'))
 
+    def test_malformed_cgroup_line_does_not_discard_sample(self):
+        raw = ('memory.current 314572800\n\n'
+               'malformed-only\n'
+               'memory.stat.inactive_file 104857600 extra-token\n'
+               'memory.max 1073741824\n')
+        row = collector.parse_cgroup(raw)
+        self.assertEqual(209715200, row['memory_used_bytes'])
+        self.assertEqual(1073741824, row['memory_limit_bytes'])
+
 class AdmissionTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.run=Path(self.temp.name)

@@ -1,15 +1,20 @@
 # scripts/metrics/plot-memory-over-time.py
 
-import json
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 
 
 RESULTS_ROOT = Path("results/local-idle-rare-quick")
 OUT = Path("reports/memory-over-time.html")
+
+SCENARIO_LABELS = {
+    "fresh-idle": "Свежий простой: сервис запущен и почти ничего не делает",
+    "rare-requests": "Редкие запросы: сервис почти простаивает, но иногда обрабатывает трафик",
+    "low-load": "Слабая нагрузка: постоянный небольшой поток запросов",
+    "unknown": "Неизвестный сценарий",
+}
 
 
 def detect_runtime(run_dir: Path) -> str:
@@ -27,6 +32,26 @@ def detect_runtime(run_dir: Path) -> str:
     return run_dir.name
 
 
+def detect_scenario(run_dir: Path) -> str:
+    parts = [p.lower() for p in run_dir.parts]
+
+    for scenario in ["fresh-idle", "rare-requests", "low-load"]:
+        if scenario in parts:
+            return scenario
+
+    return "unknown"
+
+
+def detect_pass(run_dir: Path) -> str:
+    parts = [p.lower() for p in run_dir.parts]
+
+    for part in parts:
+        if part.startswith("pass"):
+            return part
+
+    return "unknown"
+
+
 def read_memory_run(run_dir: Path) -> pd.DataFrame | None:
     metrics_file = run_dir / "runtime-metrics.csv"
     if not metrics_file.exists():
@@ -34,10 +59,7 @@ def read_memory_run(run_dir: Path) -> pd.DataFrame | None:
 
     df = pd.read_csv(metrics_file)
 
-    # Подстрой под реальные названия колонок, если отличаются
-    time_col = "timestamp"
     memory_col = None
-
     for candidate in [
         "memory_current_bytes",
         "memory_used_bytes",
@@ -54,34 +76,56 @@ def read_memory_run(run_dir: Path) -> pd.DataFrame | None:
             break
 
     if memory_col is None:
-        raise ValueError(f"No memory column found in {metrics_file}. Columns: {list(df.columns)}")
+        raise ValueError(
+            f"No memory column found in {metrics_file}. Columns: {list(df.columns)}"
+        )
 
-    df[time_col] = pd.to_datetime(df[time_col], utc=True, errors="coerce")
-    df = df.dropna(subset=[time_col])
+    if "elapsed_seconds" in df.columns:
+        df["time_seconds"] = df["elapsed_seconds"]
+    else:
+        time_col = "timestamp"
+        if time_col not in df.columns:
+            raise ValueError(
+                f"No elapsed_seconds or timestamp column found in {metrics_file}. "
+                f"Columns: {list(df.columns)}"
+            )
 
-    df["time_seconds"] = (df[time_col] - df[time_col].min()).dt.total_seconds()
+        df[time_col] = pd.to_datetime(df[time_col], utc=True, errors="coerce")
+        df = df.dropna(subset=[time_col])
+        df["time_seconds"] = (df[time_col] - df[time_col].min()).dt.total_seconds()
+
+    scenario = detect_scenario(run_dir)
+
     df["runtime"] = detect_runtime(run_dir)
+    df["scenario"] = scenario
+    df["scenario_label"] = SCENARIO_LABELS.get(scenario, scenario)
+    df["pass"] = detect_pass(run_dir)
+    df["run_id"] = run_dir.name
     df["run_dir"] = str(run_dir)
+    df["memory_metric"] = memory_col
 
     if memory_col.endswith("_bytes") or memory_col.endswith("Bytes"):
         df["memory_mb"] = df[memory_col] / 1024 / 1024
     else:
         df["memory_mb"] = df[memory_col]
 
-    return df[["time_seconds", "memory_mb", "runtime", "run_dir"]]
+    if "phase" not in df.columns:
+        df["phase"] = "unknown"
 
-
-def add_phase_markers(fig: go.Figure, run_dir: Path):
-    phases_file = run_dir / "phases.json"
-    if not phases_file.exists():
-        return
-
-    phases = json.loads(phases_file.read_text())
-
-    # Тут зависит от формата phases.json.
-    # Если там есть timestamps фаз, их нужно привести к seconds from run start.
-    # Для первого v1 можно начать без phase markers,
-    # а потом адаптировать этот блок под фактическую структуру файла.
+    return df[
+        [
+            "time_seconds",
+            "memory_mb",
+            "runtime",
+            "scenario",
+            "scenario_label",
+            "pass",
+            "phase",
+            "run_id",
+            "memory_metric",
+            "run_dir",
+        ]
+    ]
 
 
 def main():
@@ -101,23 +145,50 @@ def main():
 
     all_df = pd.concat(frames, ignore_index=True)
 
+    all_df = all_df.sort_values(
+        ["scenario", "pass", "runtime", "run_id", "time_seconds"]
+    )
+
     fig = px.line(
         all_df,
         x="time_seconds",
         y="memory_mb",
         color="runtime",
-        hover_data=["run_dir"],
-        title="Memory Over Time",
+        line_group="run_id",
+        facet_col="scenario_label",
+        hover_data=[
+            "scenario_label",
+            "pass",
+            "phase",
+            "run_id",
+            "memory_metric",
+            "run_dir",
+        ],
+        title="Память во времени",
         labels={
-            "time_seconds": "Time from run start, sec",
-            "memory_mb": "Memory, MB",
+            "time_seconds": "Время от старта run, сек",
+            "memory_mb": "Память, MB",
             "runtime": "Runtime",
+            "scenario_label": "Сценарий",
+            "pass": "Pass",
+            "phase": "Фаза",
+            "run_id": "Run",
+            "memory_metric": "Метрика памяти",
+            "run_dir": "Папка run",
         },
     )
 
     fig.update_layout(
         template="plotly_white",
         hovermode="x unified",
+    )
+
+    max_memory = all_df["memory_mb"].max()
+    y_max = max_memory * 1.10
+
+    fig.update_yaxes(
+        matches="y",
+        range=[0, y_max],
     )
 
     OUT.parent.mkdir(parents=True, exist_ok=True)

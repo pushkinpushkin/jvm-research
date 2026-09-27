@@ -41,3 +41,14 @@
 Причина: набор Prometheus labels для Kafka lag зависит от экспортера/версии и может предупреждать об отсутствующих или несовпадающих labels, тогда как CLI показывает фактический lag consumer group по двум topics стенда.
 Контроль: валидатор fail-closed требует строки по `order.status.changed` и `business.event.occurred`, числовой lag и сумму 0; отсутствие Prometheus lag labels не означает нулевой lag.
 Дата: 2026-09-26.
+
+## D-007: Malformed cgroup sample не останавливает серию
+
+Решение: collector пропускает пустые и malformed строки cgroup, используя первые два
+токена валидной строки; samples с недоступными обязательными counters остаются
+fail-closed, но raw и ошибка сохраняются в `cgroup-errors/`.
+Причина: формат отдельных строк cgroup может отличаться на VPS/kernel без потери
+базовых counters; часовой прогон не должен падать из-за одной такой строки.
+Контроль: regression test на malformed raw, предупреждение в stderr и отдельный
+артефакт ошибки для диагностики.
+Дата: 2026-09-27.
