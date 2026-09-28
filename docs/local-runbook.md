@@ -72,6 +72,20 @@ Readiness не заменяет проверку Kafka/внешнего API: д�
 
 ## Основная матрица: 2 CPU, 1 GiB
 
+Для локального сравнительного прогона по 10 минут на каждый runtime используйте
+подготовленный helper. По умолчанию это `low-load` 1 запрос/с, normal traffic,
+пул 1000, без post-load idle; результаты складываются в отдельную серию
+`results/local-10m/<series-id>/`. Это не baseline и не заменяет pilot на выбранном
+исследовательском хосте:
+
+```bash
+bash scripts/run-local-10m-matrix.sh
+```
+
+Полезные варианты: `SCENARIO=idle`, `SCENARIO=load RATE=10`,
+`MATRIX_PASSES=both` для обратного повтора, `POST_IDLE_SECONDS=600` для отдельного
+10-минутного окна после нагрузки и `DRY_RUN=true` для проверки плана.
+
 Нагрузочный fixed-heap baseline (три JVM) и отдельный native вариант:
 
 ```bash

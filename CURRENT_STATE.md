@@ -14,6 +14,13 @@ VPS-подготовка остаётся актуальной: добавлен
 
 ## Подтверждено
 
+Подготовлен `scripts/run-local-10m-matrix.sh` для локального эксперимента: по умолчанию
+4 последовательных прогона `low-load` по 10 минут (HotSpot, OpenJ9, GraalVM JIT,
+GraalVM Native), `ORDER_POOL=1000`, `SEED_ORDERS=1000`, `TRAFFIC_PROFILE=normal`,
+отдельные `RUN_ID` и результаты в `results/local-10m/<series-id>/`. Поддержаны
+`SCENARIO`, `RATE`, `MATRIX_PASSES`, `POST_IDLE_SECONDS` и `DRY_RUN`; shell syntax и
+dry-run проверены. Серия не является baseline.
+
 Локально для quick matrix config: `bash -n scripts/run-v1-idle-rare-matrix.sh` — success; `DRY_RUN=true bash scripts/run-v1-idle-rare-matrix.sh --config configs/local-idle-rare-quick.env` — success, планирует 8 запусков и HTML-отчёт; `python3 scripts/validate-run.py results/local-idle-rare-quick/20260926T231137Z-local-idle-rare-quick/pass1-forward/rare-requests/20260926T231137Z-local-idle-rare-quick-pass1-forward-1-rare-requests-work-hotspot-elastic` — `eligible=true` после исправления Kafka lag parser; `python3 -m unittest scripts.tests.test_research_validity scripts.tests.test_experiments` — 18/18. Эти проверки не завершили всю Docker/JVM-матрицу и не создают baseline-данные. Ранее для runner observability fix: `bash -n scripts/run-experiment.sh` — success; `python3 -m unittest discover scripts/tests` — 20/20. Ранее для VPS-скриптов поверх `cf6815b`: `for f in scripts/vps-install-prereqs.sh scripts/vps-preflight.sh scripts/vps-capture-host.sh; do bash -n "$f"; done` — success; `python3 -m unittest discover scripts/tests` — 20/20. Ранее после подготовки long-run отчёта: `./gradlew test` — success; 14 Java tests и bootJar, 10 живых HTTP-проверок WireMock; после endpoint fix — Python tests со строгой проверкой boundary skip, недостающей и лишней работы. Исполнение JS guard проверено на обычном index, одном endpoint no-op и недопустимом следующем index.
 
 CI [36193573959](https://github.com/pushkinpushkin/jvm-research/actions/runs/36193573959) для `e9388c55cc44d3afa7ec5b5ea2ba174019596640`: **success**, все 6 jobs. Java/Python tests, bootJar и 10 WireMock mappings успешны. Все четыре runtime, включая сборку Native executable, прошли idle, normal load и faults + async drain: **12 smoke-прогонов, у каждого eligible=true**. Это короткие функциональные проверки, не baseline.
