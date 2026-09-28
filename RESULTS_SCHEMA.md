@@ -17,7 +17,7 @@
 | `runtime-metrics.csv` | Наблюдаемые отсчёты cgroup с elapsed/phase/phase_elapsed |
 | `cgroup/`, `prometheus/`, `state/` | Сырые cgroup, Prometheus и прикладное состояние, привязанные ко времени |
 | `k6-summary.json`, опциональная серия k6 | HTTP/бизнес-счётчики и latency без seed |
-| `state-before.json`, `state-after.json`, `kafka-lag.txt` | Прикладной баланс и завершение фоновой работы; lag двух topics из Kafka consumer-groups CLI |
+| `state-before.json`, `state-drain.json`, `state-after.json`, `kafka-lag.txt` | `state-drain.json` — итоговое business-состояние после drain; `state-after.json` — наблюдение после post-idle, где cleanup уже мог изменить business-состояние; lag двух topics из Kafka consumer-groups CLI |
 | Логи приложения, k6 и инфраструктуры | Диагностика конкретной причины отклонения |
 
 Manifest уже формируется автоматически; не восстанавливай настройки по shell history. Для воспроизводимого baseline дополнительно архивировать версии Docker, ОС/ядро хоста и immutable digests всех зависимостей; runner фиксирует доступные Docker image IDs / repo digests в `image-digests.json`, но это не заменяет закрепление исследовательского хоста.
@@ -51,7 +51,7 @@ Sampling по умолчанию 5 секунд. Для каждой фазы: w
 
 HTTP error rate, `business_processed`, `expected_faults`, `unexpected_results`, scheduler/consumer/outbox errors учитываются отдельно. `iterations = expectedIterations + trace_boundary_skips`, skips ∈ {0,1}; `http_reqs = business_requests = expectedIterations`; dropped=0. Boundary skip возможен только для index=trace.length и не выполняет HTTP. Искусственные отказы не дают права игнорировать неожиданные исключения.
 
-Validator проверяет trace SHA, профиль/лимиты, порядок фаз и покрытие данными, точные counts/режимы/SLO, границы состояния, прикладной баланс, пустой outbox, lag из `kafka-consumer-groups --describe`, OOM/swap/restarts и полноту telemetry. Prometheus Kafka lag labels не являются admission-источником: их отсутствие или нестабильный набор labels не интерпретируется как нулевой lag. Ненулевой exit или отсутствующие обязательные данные отклоняют запуск. Успех k6 недостаточен. Возможность отсутствующих JVM-метрик Native не распространяется на обязательные cgroup/HTTP/async данные.
+Validator проверяет trace SHA, профиль/лимиты, порядок фаз и покрытие данными, точные counts/режимы/SLO, границы состояния, прикладной баланс, пустой outbox, lag из `kafka-consumer-groups --describe`, OOM/swap/restarts и полноту telemetry. Business correctness и `observedWork` берутся из `state-drain.json`; для старых артефактов без drain-снимка сохранён fallback на `state-after.json`. Prometheus Kafka lag labels не являются admission-источником: их отсутствие или нестабильный набор labels не интерпретируется как нулевой lag. Ненулевой exit или отсутствующие обязательные данные отклоняют запуск. Успех k6 недостаточен. Возможность отсутствующих JVM-метрик Native не распространяется на обязательные cgroup/HTTP/async данные.
 
 ## Сравнение и доказательства
 

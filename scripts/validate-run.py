@@ -78,8 +78,12 @@ def validate(run):
         for percentile, limit in [('p(95)','p95Ms'),('p(99)','p99Ms')]:
             actual = metric(summary, 'business_latency', percentile)
             require(isinstance(actual, (int,float)) and math.isfinite(actual) and actual < meta.get('slo',{}).get(limit,0), f'Business latency {percentile} violates SLO or is missing')
-    before, after = read('state-before.json'), read('state-after.json')
-    counters = after.get('counters', {})
+    before = read('state-before.json')
+    # Drain is the business-completion boundary. state-after is captured only
+    # after post-load idle, when application cleanup may remove business state.
+    post_idle_final_state = read('state-after.json')
+    business_final_state = read('state-drain.json') if (run/'state-drain.json').exists() else post_idle_final_state
+    counters = business_final_state.get('counters', {})
     for key in ('http_unexpected','scheduler_errors','consumer_errors','outbox_errors'):
         require(counters.get(key) == 0, f'{key} nonzero or missing')
     for key in ('events_enqueued','events_published','events_consumed','outbox_deliveries','events_duplicate'):
@@ -95,7 +99,7 @@ def validate(run):
         if meta.get('trafficProfile') == 'normal':
             for key in ('http_expected_fault','scheduler_expected_fault','mongo_expected_fault','synthetic_duplicates'):
                 require(counters.get(key) == 0, f'Unexpected fault in normal profile: {key}')
-    snapshots = [after]
+    snapshots = [post_idle_final_state]
     for path in sorted((run/'state').glob('*.json')):
         try: snapshots.append(json.loads(path.read_text()))
         except ValueError: reasons.append('Invalid sampled application state')
@@ -106,9 +110,9 @@ def validate(run):
         require(0 <= bounds.get('eventIdsMax',-1) <= 1024, 'Event receipt limit violated or unavailable')
         require(0 <= state.get('dedupCacheSize',-1) <= 10000, 'Dedup cache limit violated or unavailable')
         require(0 <= bounds.get('orders',-1) <= meta.get('load',{}).get('seedOrders',-1), 'Order population grew beyond seed')
-    require(after.get('bounds',{}).get('orders') == meta.get('load',{}).get('seedOrders'), 'Final order population differs from seed')
+    require(business_final_state.get('bounds',{}).get('orders') == meta.get('load',{}).get('seedOrders'), 'Final order population differs from seed at business drain')
     for key in ('pendingEvents','waiting','retryable'):
-        require(after.get('bounds',{}).get(key) == 0, f'Background work remains: {key}')
+        require(business_final_state.get('bounds',{}).get(key) == 0, f'Background work remains at business drain: {key}')
     try:
         require(kafka_lag((run/'kafka-lag.txt').read_text(), no_events=counters.get('events_enqueued') == 0) == 0, 'Nonzero Kafka lag')
     except (OSError, ValueError) as ex: reasons.append(f'Kafka lag unavailable: {ex}')
@@ -151,7 +155,9 @@ if __name__ == '__main__':
     try: result = validate(run)
     except Exception as ex: result = {'eligible':False, 'status':'отклонён', 'reasons':[f'Validator could not interpret artifacts: {ex}']}
     (run/'validation.json').write_text(json.dumps(result, indent=2, ensure_ascii=False)+'\n')
-    state = json.loads((run/'state-after.json').read_text()) if (run/'state-after.json').exists() else {}
+    # observedWork describes completed business work, not the post-idle state.
+    state_path = run/'state-drain.json' if (run/'state-drain.json').exists() else run/'state-after.json'
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
     counters = state.get('counters',{})
     observed = {k:v for k,v in counters.items() if k.startswith('external_') or k in ('events_enqueued','events_consumed','synthetic_duplicates')}
     update_metadata(run/'metadata.json', comparisonEligible=result['eligible'], observedWork=observed)
