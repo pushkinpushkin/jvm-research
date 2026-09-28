@@ -81,6 +81,26 @@ class AdmissionTests(unittest.TestCase):
     def write(self,name,data): (self.run/name).write_text(json.dumps(data))
     def tearDown(self): self.temp.cleanup()
     def test_complete_evidence_is_eligible(self): self.assertEqual([],validator.validate(self.run)['reasons'])
+    def test_drain_state_is_business_final_and_after_is_post_idle_observation(self):
+        workload=trace(1000,360,42,'normal');self.write('workload.json',workload)
+        self.meta['expectedIterations']=360
+        self.meta['load']['seedOrders']=1000
+        self.meta['workloadSha256']=hashlib.sha256((self.run/'workload.json').read_bytes()).hexdigest()
+        self.write('metadata.json',self.meta)
+        from collections import Counter
+        for name in ('http_reqs','iterations','business_requests','business_processed'):
+            self.summary['metrics'][name]={'count':360}
+        self.summary['metrics'].update({'mode_'+k:{'count':v} for k,v in Counter(r['mode'] for r in workload['requests']).items()})
+        self.write('k6-summary.json',self.summary)
+        before=copy.deepcopy(self.state);before['bounds']['orders']=1000;before['counters']['http_processed']=0
+        drain=copy.deepcopy(self.state);drain['bounds']['orders']=1000;drain['counters']['http_processed']=360
+        after=copy.deepcopy(drain);after['bounds']['orders']=0;after['counters']={}
+        self.write('state-before.json',before);self.write('state-drain.json',drain);self.write('state-after.json',after)
+        self.assertTrue(validator.validate(self.run)['eligible'])
+        (self.run/'state-drain.json').unlink()
+        result=validator.validate(self.run)
+        self.assertFalse(result['eligible'])
+        self.assertIn('Final order population differs from seed at business drain',result['reasons'])
     def test_empty_kafka_partitions_with_dash_lag_are_zero(self):
         text = '''
 GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG CONSUMER-ID HOST CLIENT-ID

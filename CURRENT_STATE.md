@@ -1,8 +1,8 @@
-# Текущее состояние — 2026-09-27
+# Текущее состояние — 2026-09-28
 
 ## Где мы сейчас
 
-Этап: hardening collector перед эталонными прогонами и подготовка безопасного перезапуска VPS. В `scripts/collect-container-metrics.py` исправлен разбор нестандартных cgroup строк: пустые строки пропускаются, malformed строки логируются и не роняют sample при наличии обязательных counters; ошибки недоступных counters сохраняются вместе с raw в `cgroup-errors/`. Это точечное изменение, методика и формулы метрик не менялись. В серии `v1-idle-rare-1h` failed rare-requests run остаётся partial diagnostic и не смешивается с новой серией после фикса.
+Этап: hardening admission validator перед эталонными прогонами. В рабочем дереве (отдельный commit ещё не создан) `scripts/validate-run.py` разделяет business-final и post-idle-final state: HTTP/async counters, event balance, завершение фоновой работы, final order population и `observedWork` берутся из `state-drain.json`, если он есть; для старых артефактов сохранён fallback на `state-after.json`. `state-after.json` остаётся post-idle memory/state observation и проверяется на bounds, но cleanup после drain больше не ломает business validation. Методика метрик не менялась. В серии `v1-idle-rare-1h` failed rare-requests run остаётся partial diagnostic и не смешивается с новой серией после фикса.
 
 VPS-подготовка остаётся актуальной: добавлены репозиторные скрипты для настройки Debian/Ubuntu VPS, preflight-проверки и фиксации host snapshot; сами проверки на исследовательском хосте ещё не выполнены. При первом low-load pilot на Selectel подтверждён штатный длинный участок без вывода: после k6 runner переходит в drain и затем в `post-load-idle`, где при `POST_IDLE_SECONDS=600` ещё 10 минут собирает метрики. Runner печатает короткие progress/phase строки и подавляет пугающий stderr от необязательного `docker image inspect` при фиксации base image digest. Длительная стабильность и сравнительные выводы ещё не доказаны.
 
@@ -13,6 +13,8 @@ VPS-подготовка остаётся актуальной: добавлен
 Ограничены cache/history/receipts/outbox; Kafka redelivery после ошибки, сохранение событий до ACK, конкурентные записи одной реплики и обработка scheduler ошибок. Есть все WireMock delay/error modes. Детерминированный trace и отдельные normal/faults; admission fail-closed; раздельные фазы, cgroup/CPU/heap/GC/async данные и фазовые агрегаты. Для трёхчасовых прогонов `phase-summary.json` теперь содержит окна `3600-7200s`, `7200-10800s`, часовые `0-1h`/`1-2h`/`2-3h` и slope working set за последние 60/90 минут фазы. Runner сохраняет `image-digests.json` и `metadata.imageDigests` для runtime/base images, MongoDB, Kafka и WireMock. Kafka lag admission документирован как CLI `kafka-consumer-groups`, не Prometheus labels. Подробности модели и ограничений: `DECISIONS.md`, формулы: `RESULTS_SCHEMA.md`.
 
 ## Подтверждено
+
+Локальная regression-проверка validator в рабочем дереве: `python3 -m unittest scripts.tests.test_research_validity scripts.tests.test_experiments` — 20/20. Адресная фикстура `before.orders=1000`, `drain.orders=1000`, `drain.http_processed=360`, `drain.http_unexpected=0`, `after.orders=0` даёт `eligible=true`; после удаления `state-drain.json` тот же run отклоняется через fallback на post-idle state. Это локальная проверка, не run ID эксперимента и не baseline.
 
 Подготовлен `scripts/run-local-10m-matrix.sh` для локального эксперимента: по умолчанию
 4 последовательных прогона `low-load` по 10 минут (HotSpot, OpenJ9, GraalVM JIT,
@@ -35,4 +37,4 @@ CI выявил и подтвердил исправление endpoint tick k6:
 
 ## Следующий шаг
 
-Ближайшая цель: проверить collector regression и на VPS сохранить partial tarball, переименовать failed run, сделать `git pull --ff-only`, затем запустить новую чистую серию `v1-idle-rare-1h` с новым `RESULTS_ROOT`/`RUN_ID` либо надёжный retry только failed runtime/scenario. Проверить `validation.json`, `metadata.json` и `phase-summary.json`; old fresh-idle eligible run можно использовать как отдельное наблюдение, но не смешивать с данными после фикса для baseline. После успешного перезапуска продолжить preflight/host snapshot, pilot и stability; полная матрица остаётся отложенной до корректного HotSpot baseline.
+Ближайшая цель: зафиксировать validator fix в commit, доставить его на VPS и повторно валидировать rare-requests/low-load артефакты с `state-drain.json`. Затем на VPS сохранить partial tarball, переименовать failed run и запустить новую чистую серию `v1-idle-rare-1h` с новым `RESULTS_ROOT`/`RUN_ID` либо надёжный retry только failed runtime/scenario. Проверить `validation.json`, `metadata.json` и `phase-summary.json`; old fresh-idle eligible run можно использовать как отдельное наблюдение, но не смешивать с данными после фикса для baseline. После успешного перезапуска продолжить preflight/host snapshot, pilot и stability; полная матрица остаётся отложенной до корректного HotSpot baseline.
