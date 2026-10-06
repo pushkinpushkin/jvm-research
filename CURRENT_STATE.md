@@ -1,6 +1,14 @@
-# Текущее состояние — 2026-09-28
+# Текущее состояние — 2026-10-06
 
 ## Где мы сейчас
+
+Подготовлен `scripts/run-vps-rate10-matrix.sh`: 12 последовательных запусков (4 runtime × 3 повтора), каждый — 1 час при 10 RPS, drain до 300 секунд, 1 час post-idle. Реализация и инструкция: commits `508e85f`, `c689e57`, `cdad2b5`; запуск и продолжение описаны в `docs/rate10-matrix.md`. Сначала собираются все образы; затем первый HotSpot допускает переход к остальным только после успешного runner и `eligible=true`. Сохраняются отпечаток исходников/окружения и image IDs. Успешные прогоны пропускаются, неудачные сохраняются перед явным retry. Это автоматизация согласованной серии, не доказательство baseline.
+
+На новом VPS `jvm-research-sanbox` по предоставленным пользователем логам прошли preflight (8 vCPU, 15.6 GiB RAM, cgroup v2, без swap) и предварительная сборка HotSpot; snapshot `results/host/20261006T170308Z-sanbox`. Docker 29.8.2, k6 2.3.0. В этой задаче завершённых часовых прогонов нет; новое окружение нельзя автоматически объединять с прежним VPS.
+
+Проверено: `bash -n scripts/run-vps-rate10-matrix.sh`, dry-run 12 запусков и `python3 -m unittest discover -s scripts/tests -p 'test_rate10_matrix.py' -v` — 3/3. Тесты с подменёнными Docker/k6 проверяют порядок, остановку, продолжение, сохранение неудачной попытки и отказ при смене образов. Реальные контейнерные эксперименты при подготовке PR не запускались.
+
+## Предыдущий checkpoint (2026-09-28)
 
 Этап: hardening admission validator перед эталонными прогонами. В рабочем дереве (отдельный commit ещё не создан) `scripts/validate-run.py` разделяет business-final и post-idle-final state: HTTP/async counters, event balance, завершение фоновой работы, final order population и `observedWork` берутся из `state-drain.json`, если он есть; для старых артефактов сохранён fallback на `state-after.json`. `state-after.json` остаётся post-idle memory/state observation и проверяется на bounds, но cleanup после drain больше не ломает business validation. Методика метрик не менялась. В серии `v1-idle-rare-1h` failed rare-requests run остаётся partial diagnostic и не смешивается с новой серией после фикса.
 
@@ -37,4 +45,4 @@ CI выявил и подтвердил исправление endpoint tick k6:
 
 ## Следующий шаг
 
-Ближайшая цель: зафиксировать validator fix в commit, доставить его на VPS и повторно валидировать rare-requests/low-load артефакты с `state-drain.json`. Затем на VPS сохранить partial tarball, переименовать failed run и запустить новую чистую серию `v1-idle-rare-1h` с новым `RESULTS_ROOT`/`RUN_ID` либо надёжный retry только failed runtime/scenario. Проверить `validation.json`, `metadata.json` и `phase-summary.json`; old fresh-idle eligible run можно использовать как отдельное наблюдение, но не смешивать с данными после фикса для baseline. После успешного перезапуска продолжить preflight/host snapshot, pilot и stability; полная матрица остаётся отложенной до корректного HotSpot baseline.
+После доставки PR на VPS запустить серию по `docs/rate10-matrix.md` (или завершить уже начатую серию прежним внешним скриптом). Проверить первый часовой HotSpot: validation, фазовые метрики и тренд памяти; затем оценить 12 результатов с учётом повторов и нового хоста. Не объявлять эталон на основании одной успешной валидации. Следующий неизвестный вопрос — корректность и стабильность при 10 RPS в течение часа, затем удержание памяти после часа простоя.
